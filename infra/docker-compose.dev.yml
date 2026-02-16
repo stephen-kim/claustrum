@@ -1,0 +1,92 @@
+# Source-build compose for local development.
+# Image-based deploy compose is in docker-compose.yml.
+services:
+  postgres:
+    profiles: ["localdb"]
+    image: postgres:16-alpine
+    container_name: context-sync-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-context_sync}
+      POSTGRES_USER: ${POSTGRES_USER:-context_sync}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-context_sync}
+    volumes:
+      - context_sync_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-context_sync} -d ${POSTGRES_DB:-context_sync}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  memory-core:
+    build:
+      context: ..
+      dockerfile: apps/memory-core/Dockerfile
+    container_name: context-sync-memory-core
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      MEMORY_CORE_HOST: ${MEMORY_CORE_HOST:-0.0.0.0}
+      MEMORY_CORE_PORT: ${MEMORY_CORE_PORT:-8080}
+      MEMORY_CORE_LOG_LEVEL: ${MEMORY_CORE_LOG_LEVEL:-error}
+      MEMORY_CORE_API_KEY: ${MEMORY_CORE_API_KEY}
+      MEMORY_CORE_API_KEYS: ${MEMORY_CORE_API_KEYS:-}
+      MEMORY_CORE_SEED_ADMIN_KEY: ${MEMORY_CORE_SEED_ADMIN_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    command:
+      [
+        "sh",
+        "-lc",
+        "pnpm db:migrate && pnpm db:seed && pnpm start:http",
+      ]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const http=require('http');http.get('http://127.0.0.1:8080/healthz',(res)=>process.exit(res.statusCode===200?0:1)).on('error',()=>process.exit(1));",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    ports:
+      - "${MEMORY_CORE_PORT:-8080}:8080"
+
+  mcp-adapter:
+    build:
+      context: ..
+      dockerfile: apps/mcp-adapter/Dockerfile
+    container_name: context-sync-mcp-adapter
+    environment:
+      MEMORY_CORE_URL: ${MEMORY_CORE_URL:-http://memory-core:8080}
+      MEMORY_CORE_API_KEY: ${MEMORY_CORE_API_KEY}
+      MEMORY_CORE_WORKSPACE_KEY: ${MEMORY_CORE_WORKSPACE_KEY:-personal}
+      MCP_ADAPTER_LOG_LEVEL: ${MCP_ADAPTER_LOG_LEVEL:-error}
+    depends_on:
+      memory-core:
+        condition: service_healthy
+    command: ["pnpm", "start"]
+    stdin_open: true
+    tty: true
+
+  admin-ui:
+    build:
+      context: ..
+      dockerfile: apps/admin-ui/Dockerfile
+    container_name: context-sync-admin-ui
+    environment:
+      NEXT_PUBLIC_MEMORY_CORE_URL: ${NEXT_PUBLIC_MEMORY_CORE_URL}
+    depends_on:
+      memory-core:
+        condition: service_healthy
+    ports:
+      - "${ADMIN_UI_PORT:-3000}:3000"
+
+volumes:
+  context_sync_postgres:

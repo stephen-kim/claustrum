@@ -1,0 +1,104 @@
+# Image-based compose for Dockge/servers.
+# Source-build local dev compose is in docker-compose.dev.yml.
+services:
+  postgres:
+    profiles: ["localdb"]
+    image: postgres:16-alpine
+    container_name: context-sync-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-context_sync}
+      POSTGRES_USER: ${POSTGRES_USER:-context_sync}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-context_sync}
+    volumes:
+      - context_sync_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-context_sync} -d ${POSTGRES_DB:-context_sync}",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  memory-core:
+    image: ${MEMORY_CORE_IMAGE:?Set MEMORY_CORE_IMAGE (published memory-core image tag)}
+    container_name: context-sync-memory-core
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      MEMORY_CORE_HOST: ${MEMORY_CORE_HOST:-0.0.0.0}
+      MEMORY_CORE_PORT: ${MEMORY_CORE_PORT:-8080}
+      MEMORY_CORE_LOG_LEVEL: ${MEMORY_CORE_LOG_LEVEL:-error}
+      MEMORY_CORE_API_KEY: ${MEMORY_CORE_API_KEY}
+      MEMORY_CORE_API_KEYS: ${MEMORY_CORE_API_KEYS:-}
+      MEMORY_CORE_SEED_ADMIN_KEY: ${MEMORY_CORE_SEED_ADMIN_KEY}
+      MEMORY_CORE_AUDIT_SLACK_WEBHOOK_URL: ${MEMORY_CORE_AUDIT_SLACK_WEBHOOK_URL:-}
+      MEMORY_CORE_AUDIT_SLACK_ACTION_PREFIXES: ${MEMORY_CORE_AUDIT_SLACK_ACTION_PREFIXES:-}
+      MEMORY_CORE_AUDIT_SLACK_DEFAULT_CHANNEL: ${MEMORY_CORE_AUDIT_SLACK_DEFAULT_CHANNEL:-}
+      MEMORY_CORE_AUDIT_SLACK_FORMAT: ${MEMORY_CORE_AUDIT_SLACK_FORMAT:-detailed}
+      MEMORY_CORE_AUDIT_SLACK_INCLUDE_TARGET_JSON: ${MEMORY_CORE_AUDIT_SLACK_INCLUDE_TARGET_JSON:-true}
+      MEMORY_CORE_AUDIT_SLACK_MASK_SECRETS: ${MEMORY_CORE_AUDIT_SLACK_MASK_SECRETS:-true}
+      MEMORY_CORE_INTEGRATION_LOCKED_PROVIDERS: ${MEMORY_CORE_INTEGRATION_LOCKED_PROVIDERS:-}
+      MEMORY_CORE_NOTION_TOKEN: ${MEMORY_CORE_NOTION_TOKEN:-}
+      MEMORY_CORE_NOTION_DEFAULT_PARENT_PAGE_ID: ${MEMORY_CORE_NOTION_DEFAULT_PARENT_PAGE_ID:-}
+      MEMORY_CORE_NOTION_WRITE_ENABLED: ${MEMORY_CORE_NOTION_WRITE_ENABLED:-false}
+      MEMORY_CORE_JIRA_BASE_URL: ${MEMORY_CORE_JIRA_BASE_URL:-}
+      MEMORY_CORE_JIRA_EMAIL: ${MEMORY_CORE_JIRA_EMAIL:-}
+      MEMORY_CORE_JIRA_API_TOKEN: ${MEMORY_CORE_JIRA_API_TOKEN:-}
+      MEMORY_CORE_CONFLUENCE_BASE_URL: ${MEMORY_CORE_CONFLUENCE_BASE_URL:-}
+      MEMORY_CORE_CONFLUENCE_EMAIL: ${MEMORY_CORE_CONFLUENCE_EMAIL:-}
+      MEMORY_CORE_CONFLUENCE_API_TOKEN: ${MEMORY_CORE_CONFLUENCE_API_TOKEN:-}
+      MEMORY_CORE_LINEAR_API_KEY: ${MEMORY_CORE_LINEAR_API_KEY:-}
+      MEMORY_CORE_LINEAR_API_URL: ${MEMORY_CORE_LINEAR_API_URL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+    command:
+      [
+        "sh",
+        "-lc",
+        "pnpm db:migrate && pnpm db:seed && pnpm start:http",
+      ]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "const http=require('http');http.get('http://127.0.0.1:8080/healthz',(res)=>process.exit(res.statusCode===200?0:1)).on('error',()=>process.exit(1));",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    ports:
+      - "${MEMORY_CORE_PORT:-8080}:8080"
+
+  mcp-adapter:
+    image: ${MCP_ADAPTER_IMAGE:?Set MCP_ADAPTER_IMAGE (published mcp-adapter image tag)}
+    container_name: context-sync-mcp-adapter
+    environment:
+      MEMORY_CORE_URL: ${MEMORY_CORE_URL:-http://memory-core:8080}
+      MEMORY_CORE_API_KEY: ${MEMORY_CORE_API_KEY}
+      MEMORY_CORE_WORKSPACE_KEY: ${MEMORY_CORE_WORKSPACE_KEY:-personal}
+      MCP_ADAPTER_LOG_LEVEL: ${MCP_ADAPTER_LOG_LEVEL:-error}
+    depends_on:
+      memory-core:
+        condition: service_healthy
+    command: ["pnpm", "start"]
+    stdin_open: true
+    tty: true
+
+  admin-ui:
+    image: ${ADMIN_UI_IMAGE:?Set ADMIN_UI_IMAGE (published admin-ui image tag)}
+    container_name: context-sync-admin-ui
+    environment:
+      NEXT_PUBLIC_MEMORY_CORE_URL: ${NEXT_PUBLIC_MEMORY_CORE_URL}
+    depends_on:
+      memory-core:
+        condition: service_healthy
+    ports:
+      - "${ADMIN_UI_PORT:-3000}:3000"
+
+volumes:
+  context_sync_postgres:
