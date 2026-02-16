@@ -6,7 +6,7 @@
   "main": "dist/http-server.js",
   "types": "dist/http-server.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json && prisma generate --schema prisma/schema.prisma",
+    "build": "prisma generate --schema prisma/schema.prisma && tsc -p tsconfig.json",
     "dev": "tsx watch src/http-server.ts",
     "start:http": "node dist/http-server.js",
     "postinstall": "prisma generate --schema prisma/schema.prisma",
