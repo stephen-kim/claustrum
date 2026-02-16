@@ -1,357 +1,231 @@
-﻿import Database from 'better-sqlite3';
-import { randomUUID } from 'crypto';
-import * as crypto from 'crypto';
-import * as path from 'path';
-import * as os from 'os';
-import * as fs from 'fs';
-import type {
-  ProjectContext,
-  Conversation,
-  Decision,
-  ContextSummary,
-  StorageInterface,
-} from './types.js';
-import { PathNormalizer } from './path-normalizer.js';
-import { migrateSchema, isSchemaCurrent } from './schema.js';
+import knex, { Knex } from 'knex';
+import type { ProjectContext } from './types.js';
+import { normalizeProjectKey } from './project-key.js';
+import { resolveDatabaseConnection } from './db-connection.js';
 
-export class Storage implements StorageInterface {
-  private db: Database.Database;
-  private dbPath: string;
-  
-  // Prepared statement cache for 2-5x faster queries with LRU eviction
-  private preparedStatements: Map<string, Database.Statement> = new Map();
-  private readonly MAX_PREPARED_STATEMENTS = 100;
+type ProjectRow = {
+  key: string;
+  name: string;
+  path: string | null;
+  architecture: string | null;
+  tech_stack: unknown;
+  metadata: unknown;
+  created_at: Date;
+  updated_at: Date;
+};
 
-  constructor(dbPath?: string) {
-    // Default to user's home directory
-    const defaultPath = path.join(os.homedir(), '.context-sync', 'data.db');
-    this.dbPath = dbPath || defaultPath;
-    
-    // Ensure directory exists
-    const dir = path.dirname(this.dbPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+type ProjectInput = {
+  key: string;
+  label: string;
+  path?: string;
+  metadata?: Record<string, unknown>;
+  architecture?: string;
+  techStack?: string[];
+};
 
-    this.db = new Database(this.dbPath);
-    this.initDatabase();
-    // Migrate schema if needed
-    if (!isSchemaCurrent(this.db)) {
-      migrateSchema(this.db);
-    }
+type ProjectMetricsInput = {
+  projectKey: string;
+  linesOfCode?: number;
+  fileCount?: number;
+  lastCommit?: string | null;
+  contributors?: number;
+  hotspots?: unknown[];
+  complexity?: string | null;
+};
+
+export class Storage {
+  private readonly db: Knex;
+
+  constructor() {
+    this.db = knex({
+      client: 'pg',
+      connection: resolveDatabaseConnection(),
+      pool: {
+        min: 0,
+        max: 10,
+      },
+    });
   }
 
-  private initDatabase(): void {
-    
-    // Create tables
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS projects (
-        id TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        path TEXT,
-        architecture TEXT,
-        tech_stack TEXT,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        is_current INTEGER DEFAULT 0
+  async ensureSchemaIsReady(): Promise<void> {
+    const rows = await this.db('information_schema.tables')
+      .select('table_name')
+      .where('table_schema', 'public')
+      .whereIn('table_name', ['projects', 'project_metrics', 'memory_entries']);
+
+    const existing = new Set(rows.map((row) => row.table_name as string));
+    const required = ['projects', 'project_metrics', 'memory_entries'];
+    const missing = required.filter((table) => !existing.has(table));
+    if (missing.length > 0) {
+      throw new Error(
+        `Database schema is not initialized. Missing tables: ${missing.join(', ')}. Run \"npm run db:migrate\".`
       );
-
-      CREATE TABLE IF NOT EXISTS conversations (
-        id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL,
-        tool TEXT NOT NULL,
-        role TEXT NOT NULL,
-        content TEXT NOT NULL,
-        timestamp INTEGER NOT NULL,
-        metadata TEXT,
-        FOREIGN KEY (project_id) REFERENCES projects(id)
-      );
-
-      CREATE TABLE IF NOT EXISTS decisions (
-        id TEXT PRIMARY KEY,
-        project_id TEXT NOT NULL,
-        type TEXT NOT NULL,
-        description TEXT NOT NULL,
-        reasoning TEXT,
-        timestamp INTEGER NOT NULL,
-        FOREIGN KEY (project_id) REFERENCES projects(id)
-      );
-
-      CREATE INDEX IF NOT EXISTS idx_conversations_project 
-        ON conversations(project_id, timestamp DESC);
-      CREATE INDEX IF NOT EXISTS idx_decisions_project 
-        ON decisions(project_id, timestamp DESC);
-    `);
+    }
   }
 
-  /**
-   * Get or create a prepared statement for faster queries (2-5x performance improvement)
-   * Implements LRU cache to prevent memory bloat
-   */
-  private getStatement(sql: string): Database.Statement {
-    if (this.preparedStatements.has(sql)) {
-      // Move to end (most recently used) in Map
-      const statement = this.preparedStatements.get(sql)!;
-      this.preparedStatements.delete(sql);
-      this.preparedStatements.set(sql, statement);
-      return statement;
-    }
-    
-    // Check if we need to evict oldest entry
-    if (this.preparedStatements.size >= this.MAX_PREPARED_STATEMENTS) {
-      // Remove least recently used (first entry in Map)
-      const firstKey = this.preparedStatements.keys().next().value;
-      if (firstKey) {
-        const oldStatement = this.preparedStatements.get(firstKey);
-        this.preparedStatements.delete(firstKey);
-        
-        // Note: better-sqlite3 statements don't need explicit cleanup
-        // They are automatically cleaned up when garbage collected
-      }
-    }
-    
-    const statement = this.db.prepare(sql);
-    this.preparedStatements.set(sql, statement);
-    return statement;
+  getDb(): Knex {
+    return this.db;
   }
 
-  createProject(name: string, projectPath?: string): ProjectContext {
-    // Normalize the path before storing if provided
-    const normalizedPath = projectPath ? PathNormalizer.normalize(projectPath) : undefined;
-    
-    // Check for existing project with same path to prevent duplicates
-    if (normalizedPath) {
-      const existing = this.findProjectByPath(normalizedPath);
-      if (existing) {
-        return existing;
-      }
+  async upsertProject(input: ProjectInput): Promise<ProjectContext> {
+    const key = normalizeProjectKey(input.key);
+    const now = new Date();
+
+    await this.db('projects')
+      .insert({
+        key,
+        name: input.label,
+        path: input.path || null,
+        architecture: input.architecture || null,
+        tech_stack: input.techStack || [],
+        metadata: input.metadata || {},
+        created_at: now,
+        updated_at: now,
+      })
+      .onConflict('key')
+      .merge({
+        name: input.label,
+        path: input.path || null,
+        architecture: input.architecture || null,
+        tech_stack: input.techStack || [],
+        metadata: input.metadata || {},
+        updated_at: now,
+      });
+
+    const row = (await this.db<ProjectRow>('projects').where({ key }).first()) as ProjectRow | undefined;
+    if (!row) {
+      throw new Error(`Failed to load project after upsert: ${key}`);
     }
-    
-    const id = crypto.randomUUID();
-    const now = Date.now();
+    return rowToProject(row);
+  }
 
-    this.getStatement(`
-      INSERT INTO projects (id, name, path, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?)
-    `).run(id, name, normalizedPath, now, now);
+  async createProject(name: string, projectPath?: string): Promise<ProjectContext> {
+    const key = normalizeProjectKey(projectPath || name);
+    return this.upsertProject({
+      key,
+      label: name,
+      path: projectPath,
+    });
+  }
 
-    return {
-      id,
-      name,
-      path: normalizedPath,
-      techStack: [],
-      createdAt: new Date(now),
-      updatedAt: new Date(now),
+  async getProject(projectKey: string): Promise<ProjectContext | null> {
+    const key = normalizeProjectKey(projectKey);
+    const row = (await this.db<ProjectRow>('projects').where({ key }).first()) as ProjectRow | undefined;
+    return row ? rowToProject(row) : null;
+  }
+
+  async getAllProjects(): Promise<ProjectContext[]> {
+    const rows = (await this.db<ProjectRow>('projects')
+      .select('*')
+      .orderBy('updated_at', 'desc')) as ProjectRow[];
+    return rows.map(rowToProject);
+  }
+
+  async findProjectByPath(projectPath: string): Promise<ProjectContext | null> {
+    const key = normalizeProjectKey(projectPath);
+    return this.getProject(key);
+  }
+
+  async updateProject(projectKey: string, updates: Partial<ProjectContext>): Promise<void> {
+    const key = normalizeProjectKey(projectKey);
+    const patch: Record<string, unknown> = {
+      updated_at: new Date(),
     };
-  }
 
-  getProject(id: string): ProjectContext | null {
-    const row = this.getStatement(`
-      SELECT * FROM projects WHERE id = ?
-    `).get(id) as any;
-
-    if (!row) return null;
-
-    return this.rowToProject(row);
-  }
-
-  /**
-   * @deprecated This method is deprecated. Use ContextSyncServer.getCurrentProject() instead.
-   * Current project is now managed as session state, not in database.
-   */
-  getCurrentProject(): ProjectContext | null {
-    // Return null - current project should be retrieved from session
-    return null;
-  }
-  /**
-   * @deprecated This method is deprecated. Current project is now managed as session state in ContextSyncServer.
-   * Kept for backward compatibility only.
-   */
-  setCurrentProject(projectId: string): void {
-    // No-op - current project is now managed in ContextSyncServer
-  }
-
-
-  updateProject(id: string, updates: Partial<ProjectContext>): void {
-    const sets: string[] = [];
-    const values: any[] = [];
-
-    if (updates.name) {
-      sets.push('name = ?');
-      values.push(updates.name);
+    if (typeof updates.name === 'string') {
+      patch.name = updates.name;
     }
-    if (updates.architecture) {
-      sets.push('architecture = ?');
-      values.push(updates.architecture);
+    if (Object.prototype.hasOwnProperty.call(updates, 'path')) {
+      patch.path = updates.path || null;
     }
-    if (updates.techStack) {
-      sets.push('tech_stack = ?');
-      values.push(JSON.stringify(updates.techStack));
+    if (Object.prototype.hasOwnProperty.call(updates, 'architecture')) {
+      patch.architecture = updates.architecture || null;
+    }
+    if (Array.isArray(updates.techStack)) {
+      patch.tech_stack = updates.techStack;
     }
 
-    sets.push('updated_at = ?');
-    values.push(Date.now());
-    values.push(id);
-
-    this.getStatement(`
-      UPDATE projects SET ${sets.join(', ')} WHERE id = ?
-    `).run(...values);
+    await this.db('projects').where({ key }).update(patch);
   }
 
-  addConversation(conv: Omit<Conversation, 'id' | 'timestamp'>): Conversation {
-    const id = randomUUID();
-    const timestamp = Date.now();
-
-    this.getStatement(`
-      INSERT INTO conversations (id, project_id, tool, role, content, timestamp, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      conv.projectId,
-      conv.tool,
-      conv.role,
-      conv.content,
-      timestamp,
-      conv.metadata ? JSON.stringify(conv.metadata) : null
-    );
-
-    return {
-      id,
-      ...conv,
-      timestamp: new Date(timestamp),
-    };
+  async upsertProjectMetrics(input: ProjectMetricsInput): Promise<void> {
+    const projectKey = normalizeProjectKey(input.projectKey);
+    const now = new Date();
+    await this.db('project_metrics')
+      .insert({
+        project_key: projectKey,
+        lines_of_code: input.linesOfCode ?? 0,
+        file_count: input.fileCount ?? 0,
+        last_commit: input.lastCommit ?? null,
+        contributors: input.contributors ?? 0,
+        hotspots: input.hotspots ?? [],
+        complexity: input.complexity ?? null,
+        updated_at: now,
+      })
+      .onConflict('project_key')
+      .merge({
+        lines_of_code: input.linesOfCode ?? 0,
+        file_count: input.fileCount ?? 0,
+        last_commit: input.lastCommit ?? null,
+        contributors: input.contributors ?? 0,
+        hotspots: input.hotspots ?? [],
+        complexity: input.complexity ?? null,
+        updated_at: now,
+      });
   }
 
-  findProjectByPath(projectPath: string): ProjectContext | null {
-    // Normalize the input path for consistent lookup
-    const normalizedPath = PathNormalizer.normalize(projectPath);
-    
-    const row = this.getStatement(`
-      SELECT * FROM projects WHERE path = ?
-    `).get(normalizedPath) as any;
-
-    if (!row) return null;
-
-    return this.rowToProject(row);
-  }
-
-  getRecentConversations(projectId: string, limit: number = 10): Conversation[] {
-    const rows = this.getStatement(`
-      SELECT * FROM conversations 
-      WHERE project_id = ? 
-      ORDER BY timestamp DESC 
-      LIMIT ?
-    `).all(projectId, limit) as any[];
-
-    return rows.map(row => ({
-      id: row.id,
-      projectId: row.project_id,
-      tool: row.tool,
-      role: row.role,
-      content: row.content,
-      timestamp: new Date(row.timestamp),
-      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
-    }));
-  }
-
-  addDecision(decision: Omit<Decision, 'id' | 'timestamp'>): Decision {
-    const id = randomUUID();
-    const timestamp = Date.now();
-
-    this.getStatement(`
-      INSERT INTO decisions (id, project_id, type, description, reasoning, timestamp)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      decision.projectId,
-      decision.type,
-      decision.description,
-      decision.reasoning || null,
-      timestamp
-    );
-
-    return {
-      id,
-      ...decision,
-      timestamp: new Date(timestamp),
-    };
-  }
-
-  getDecisions(projectId: string): Decision[] {
-    const rows = this.getStatement(`
-      SELECT * FROM decisions 
-      WHERE project_id = ? 
-      ORDER BY timestamp DESC
-    `).all(projectId) as any[];
-
-    return rows.map(row => ({
-      id: row.id,
-      projectId: row.project_id,
-      type: row.type,
-      description: row.description,
-      reasoning: row.reasoning,
-      timestamp: new Date(row.timestamp),
-    }));
-  }
-
-  getContextSummary(projectId: string): ContextSummary {
-    const project = this.getProject(projectId);
-    if (!project) {
-      throw new Error(`Project ${projectId} not found`);
+  async getProjectMetrics(projectKey: string): Promise<{
+    linesOfCode: number;
+    fileCount: number;
+    lastCommit: string | null;
+    contributors: number;
+    hotspots: unknown[];
+    complexity: string | null;
+    updatedAt: Date;
+  } | null> {
+    const key = normalizeProjectKey(projectKey);
+    const row = await this.db('project_metrics').where({ project_key: key }).first();
+    if (!row) {
+      return null;
     }
-
-    const recentDecisions = this.getDecisions(projectId).slice(0, 5);
-    const recentConversations = this.getRecentConversations(projectId, 20);
-
-    // Extract key points from decisions
-    const keyPoints = [
-      project.architecture ? `Architecture: ${project.architecture}` : null,
-      ...project.techStack.map(tech => `Using: ${tech}`),
-      ...recentDecisions.map(d => d.description),
-    ].filter(Boolean) as string[];
-
     return {
-      project,
-      recentDecisions,
-      recentConversations,
-      keyPoints,
-    };
-  }
-
-  private rowToProject(row: any): ProjectContext {
-    return {
-      id: row.id,
-      name: row.name,
-      path: row.path,
-      architecture: row.architecture,
-      techStack: row.tech_stack ? JSON.parse(row.tech_stack) : [],
-      createdAt: new Date(row.created_at),
+      linesOfCode: Number(row.lines_of_code || 0),
+      fileCount: Number(row.file_count || 0),
+      lastCommit: row.last_commit ?? null,
+      contributors: Number(row.contributors || 0),
+      hotspots: Array.isArray(row.hotspots) ? row.hotspots : [],
+      complexity: row.complexity ?? null,
       updatedAt: new Date(row.updated_at),
     };
   }
 
-  getAllProjects(): ProjectContext[] {
-    const rows = this.getStatement(`
-      SELECT * FROM projects ORDER BY updated_at DESC
-    `).all();
-    
-    const projects = rows.map((row: any) => this.rowToProject(row));
-    
-    return projects;
+  async close(): Promise<void> {
+    await this.db.destroy();
+  }
+}
+
+function rowToProject(row: ProjectRow): ProjectContext {
+  let techStack: string[] = [];
+  if (Array.isArray(row.tech_stack)) {
+    techStack = row.tech_stack as string[];
+  } else if (typeof row.tech_stack === 'string') {
+    try {
+      const parsed = JSON.parse(row.tech_stack);
+      if (Array.isArray(parsed)) {
+        techStack = parsed as string[];
+      }
+    } catch {
+      techStack = [];
+    }
   }
 
-  getDb(): Database.Database {
-    return this.db;
-  }
-
-  /**
-   * Get the database file path
-   */
-  getDbPath(): string {
-    return this.dbPath;
-  }
-
-  close(): void {
-    this.db.close();
-  }
+  return {
+    id: row.key,
+    name: row.name,
+    path: row.path || undefined,
+    architecture: row.architecture || undefined,
+    techStack,
+    createdAt: new Date(row.created_at),
+    updatedAt: new Date(row.updated_at),
+  };
 }

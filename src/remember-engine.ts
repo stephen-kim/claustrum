@@ -1,13 +1,8 @@
-﻿/**
- * Remember Engine
- * Smart context storage with auto-detection, deduplication, and validation
- * Auto-enriches with git context AND file context (complexity, imports, relationships)
- */
-
-import type { Database } from 'better-sqlite3';
+import type { Knex } from 'knex';
 import { randomUUID } from 'crypto';
 import simpleGit from 'simple-git';
 import { ReadFileEngine } from './read-file-engine.js';
+import { normalizeProjectKey } from './project-key.js';
 
 interface RememberInput {
   type: 'active_work' | 'constraint' | 'problem' | 'goal' | 'decision' | 'note' | 'caveat';
@@ -36,113 +31,100 @@ interface RememberResult {
   };
 }
 
-export class RememberEngine {
-  private db: Database;
-  private projectId: string;
-  private projectPath: string;
-  private readFileEngine: ReadFileEngine;
+type MemoryRow = {
+  id: string;
+  type: string;
+  content: string;
+  metadata: Record<string, any> | null;
+  status: string | null;
+};
 
-  constructor(db: Database, projectId: string, projectPath: string) {
+export class RememberEngine {
+  private readonly db: Knex;
+  private readonly projectKey: string;
+  private readonly projectPath?: string;
+  private readonly readFileEngine?: ReadFileEngine;
+
+  constructor(db: Knex, projectKey: string, projectPath?: string) {
     this.db = db;
-    this.projectId = projectId;
+    this.projectKey = normalizeProjectKey(projectKey);
     this.projectPath = projectPath;
-    this.readFileEngine = new ReadFileEngine(projectPath);
+    this.readFileEngine = projectPath ? new ReadFileEngine(projectPath) : undefined;
   }
 
-  /**
-   * Remember context intelligently
-   */
   async remember(input: RememberInput): Promise<RememberResult> {
-    // 1. Validate content
     const validation = this.validateContent(input);
     if (!validation.valid) {
       throw new Error(validation.reason);
     }
 
-    // 2. Fetch git context to enrich metadata
     const gitContext = await this.fetchGitContext();
-
-    // 3. Auto-enhance metadata with content + git info
     input.metadata = await this.enhanceMetadata(input, gitContext);
 
-    // 4. Enrich with file context (complexity, imports, relationships)
     let fileContext: RememberResult['fileContext'];
-    if (input.metadata.files && input.metadata.files.length > 0) {
+    if (Array.isArray(input.metadata.files) && input.metadata.files.length > 0) {
       fileContext = await this.enrichWithFileContext(input.metadata.files);
-      
-      // Store file context in metadata for later retrieval
       if (fileContext && fileContext.files.length > 0) {
         input.metadata.fileContext = fileContext.files;
       }
     }
 
-    // 5. Check for duplicates/updates
-    const existing = this.findSimilar(input);
-    if (existing) {
-      // Update existing instead of creating duplicate
-      return this.updateExisting(existing, input, gitContext, fileContext);
-    }
+    const result = await this.db.transaction(async (trx) => {
+      const existing = await this.findSimilar(trx, input);
+      if (existing) {
+        await this.updateExisting(trx, existing, input, gitContext, fileContext);
+        return { action: 'updated' as const, id: existing.id };
+      }
 
-    // 6. Store new context
-    return this.storeNew(input, gitContext, fileContext);
+      const id = await this.storeNew(trx, input, gitContext);
+      return { action: 'created' as const, id };
+    });
+
+    return {
+      action: result.action,
+      id: result.id,
+      type: input.type,
+      reason:
+        result.action === 'updated'
+          ? 'Found similar existing context and updated it'
+          : 'Stored new context',
+      gitContext: gitContext || undefined,
+      fileContext,
+    };
   }
 
-  /**
-   * Fetch git context (branch, changes, status)
-   */
   private async fetchGitContext(): Promise<RememberResult['gitContext'] | null> {
+    if (!this.projectPath) {
+      return null;
+    }
     try {
       const git = simpleGit(this.projectPath);
       const status = await git.status();
       const log = await git.log({ maxCount: 1 });
-
       return {
         branch: status.current || 'unknown',
         uncommittedFiles: [
           ...status.modified,
           ...status.created,
           ...status.deleted,
-          ...status.renamed.map((entry: { to: string }) => entry.to)
+          ...status.renamed.map((entry: { to: string }) => entry.to),
         ],
         stagedFiles: status.staged,
-        lastCommit: log.latest?.message || 'No commits'
+        lastCommit: log.latest?.message || 'No commits',
       };
-    } catch (error) {
-      // Not a git repo or git error
+    } catch {
       return null;
     }
   }
 
-  /**
-   * Validate content is meaningful
-   */
   private validateContent(input: RememberInput): { valid: boolean; reason?: string } {
     const content = input.content.trim();
-
-    // Too short
-    if (content.length < 10) {
-      return { valid: false, reason: 'Content too short - be more specific (minimum 10 characters)' };
+    if (content.length < 3) {
+      return { valid: false, reason: 'Content too short - minimum 3 characters.' };
     }
-
-    // Too vague
-    const vaguePatterns = [
-      /^(this|that|it|the thing)$/i,
-      /^(todo|fix|bug|issue|task)$/i,
-      /^(working on|doing|making)$/i
-    ];
-
-    for (const pattern of vaguePatterns) {
-      if (pattern.test(content)) {
-        return { valid: false, reason: `Too vague: "${content}". Please be specific about what you're doing.` };
-      }
-    }
-
     return { valid: true };
   }
 
-  /**
-   * Auto-enhance metadata by extracting from content + git context
-   */
   private async enhanceMetadata(
     input: RememberInput,
     gitContext: RememberResult['gitContext'] | null
@@ -150,135 +132,43 @@ export class RememberEngine {
     const metadata = input.metadata || {};
     const content = input.content;
 
-    // Extract file paths from content
     if (!metadata.files) {
-      const fileMatches = content.match(/\b[\w-]+\.(ts|js|tsx|jsx|py|go|rs|java|cpp|c|h|md|json|yaml|yml|toml)\b/g);
+      const fileMatches = content.match(/\b[\w./-]+\.(ts|js|tsx|jsx|py|go|rs|java|cpp|c|h|md|json|yaml|yml|toml)\b/g);
       if (fileMatches) {
         metadata.files = Array.from(new Set(fileMatches));
       }
     }
 
-    // Extract Notion page references from content
-    if (!metadata.notionPages) {
-      const notionPatterns = [
-        // Notion URLs: https://www.notion.so/Page-Title-123abc...
-        /https:\/\/(?:www\.)?notion\.so\/[^\s]+/g,
-        // Notion page IDs: 2daae57c-efce-8109-8899-f74f9054c7b7
-        /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi
-      ];
-
-      const references = new Set<string>();
-      for (const pattern of notionPatterns) {
-        const matches = content.match(pattern);
-        if (matches) {
-          matches.forEach(ref => references.add(ref));
-        }
-      }
-
-      if (references.size > 0) {
-        metadata.notionPages = Array.from(references);
-      }
-    }
-
-    // Detect if content mentions documentation (suggest Notion search)
-    if (!metadata.suggestNotionSearch) {
-      const docKeywords = [
-        'documentation', 'docs', 'design doc', 'architecture doc', 
-        'specification', 'guide', 'manual', 'reference', 'adr', 'rfc'
-      ];
-      const lower = content.toLowerCase();
-      const mentionsDocs = docKeywords.some(keyword => lower.includes(keyword));
-      
-      if (mentionsDocs) {
-        metadata.suggestNotionSearch = true;
-        // Extract meaningful keywords for search suggestion
-        const keywords = this.extractSearchKeywords(content);
-        if (keywords) {
-          metadata.notionSearchSuggestion = keywords;
-        }
-      }
-    }
-
-    // Add uncommitted files from git (likely what user is working on)
-    if (gitContext && (input.type === 'active_work' || input.type === 'problem')) {
-      const existingFiles = metadata.files || [];
-      const allFiles = new Set([
-        ...existingFiles,
-        ...gitContext.uncommittedFiles,
-        ...gitContext.stagedFiles
-      ]);
-      metadata.files = Array.from(allFiles);
-    }
-
-    // Extract/use branch from git
     if (!metadata.branch && gitContext) {
       metadata.branch = gitContext.branch;
     }
 
-    // Extract deadlines for goals
-    if (input.type === 'goal' && !metadata.target_date) {
-      const datePatterns = [
-        /by\s+(\d{4}-\d{2}-\d{2})/i,
-        /by\s+(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})/i,
-        /deadline[:\s]+(\d{4}-\d{2}-\d{2})/i
-      ];
-
-      for (const pattern of datePatterns) {
-        const match = content.match(pattern);
-        if (match) {
-          metadata.target_date = match[1];
-          break;
-        }
-      }
+    if (gitContext && (input.type === 'active_work' || input.type === 'problem')) {
+      const existingFiles = Array.isArray(metadata.files) ? metadata.files : [];
+      metadata.files = Array.from(
+        new Set([...existingFiles, ...gitContext.uncommittedFiles, ...gitContext.stagedFiles])
+      );
     }
 
     return metadata;
   }
 
-  /**
-   * Extract meaningful keywords for Notion search suggestion
-   */
-  private extractSearchKeywords(content: string): string | null {
-    // Remove URLs, special chars, and extract meaningful terms
-    const cleaned = content
-      .replace(/https?:\/\/[^\s]+/g, '')
-      .replace(/[^\w\s]/g, ' ')
-      .toLowerCase();
+  private async enrichWithFileContext(files: string[]): Promise<RememberResult['fileContext']> {
+    if (!this.readFileEngine) {
+      return undefined;
+    }
 
-    const stopWords = ['the', 'a', 'an', 'is', 'are', 'was', 'were', 'to', 'for', 'of', 'in', 'on', 'that', 'this', 'we', 'i'];
-    const words = cleaned
-      .split(/\s+/)
-      .filter(w => w.length > 3 && !stopWords.includes(w));
-    
-    // Return first 2-3 meaningful words
-    const keywords = words.slice(0, 3).join(' ');
-    return keywords.length > 0 ? keywords : null;
-  }
-
-  /**
-   * Enrich with file context (NEW!)
-   * Read files and add complexity, imports, relationships
-   */
-  private async enrichWithFileContext(
-    files: string[]
-  ): Promise<RememberResult['fileContext']> {
     const fileContexts: RememberResult['fileContext'] = { files: [] };
-
-    // Only process first 3 files (avoid slowdown)
-    const filesToProcess = files.slice(0, 3);
-
-    for (const file of filesToProcess) {
+    for (const file of files.slice(0, 3)) {
       try {
         const fileCtx = await this.readFileEngine.read(file);
-        
         fileContexts.files.push({
           path: file,
           complexity: fileCtx.complexity.level,
           linesOfCode: fileCtx.metadata.linesOfCode,
-          imports: fileCtx.relationships.imports.slice(0, 5) // Top 5 imports
+          imports: fileCtx.relationships.imports.slice(0, 5),
         });
-      } catch (err) {
-        // File doesn't exist or can't be read, skip
+      } catch {
         continue;
       }
     }
@@ -286,312 +176,165 @@ export class RememberEngine {
     return fileContexts.files.length > 0 ? fileContexts : undefined;
   }
 
-  /**
-   * Find similar existing context
-   */
-  private findSimilar(input: RememberInput): any | null {
-    const { type, content } = input;
+  private async findSimilar(trx: Knex.Transaction, input: RememberInput): Promise<MemoryRow | null> {
+    if (input.type === 'active_work') {
+      const existing = (await trx<MemoryRow>('memory_entries')
+        .select('id', 'type', 'content', 'metadata', 'status')
+        .where('project_key', this.projectKey)
+        .andWhere('type', 'active_work')
+        .andWhere('status', 'active')
+        .orderBy('created_at', 'desc')
+        .limit(5)
+        .forUpdate()) as MemoryRow[];
 
-    // For active_work, check if task is similar
-    if (type === 'active_work') {
-      const existing = this.db.prepare(`
-        SELECT * FROM active_work 
-        WHERE project_id = ? AND status = 'active'
-        ORDER BY timestamp DESC LIMIT 5
-      `).all(this.projectId) as any[];
-
-      for (const item of existing) {
-        const similarity = this.calculateSimilarity(content, item.task);
-        if (similarity > 0.8) {
-          return { ...item, table: 'active_work' };
+      for (const row of existing) {
+        if (this.calculateSimilarity(input.content, row.content) > 0.8) {
+          return row;
         }
       }
     }
 
-    // For constraints, check if key matches
-    if (type === 'constraint') {
-      const keyValue = this.parseKeyValue(content);
-      const existing = this.db.prepare(`
-        SELECT * FROM constraints 
-        WHERE project_id = ? AND key = ?
-      `).get(this.projectId, keyValue.key);
+    if (input.type === 'constraint') {
+      const keyValue = this.parseKeyValue(input.content);
+      const existing = (await trx<MemoryRow>('memory_entries')
+        .select('id', 'type', 'content', 'metadata', 'status')
+        .where('project_key', this.projectKey)
+        .andWhere('type', 'constraint')
+        .andWhereRaw("metadata->>'key' = ?", [keyValue.key])
+        .orderBy('created_at', 'desc')
+        .first()
+        .forUpdate()) as MemoryRow | undefined;
 
-      if (existing) {
-        return { ...existing, table: 'constraints' };
-      }
-    }
-
-    // For goals, check if description is similar
-    if (type === 'goal') {
-      const existing = this.db.prepare(`
-        SELECT * FROM goals 
-        WHERE project_id = ? AND status IN ('planned', 'in-progress')
-        ORDER BY timestamp DESC LIMIT 5
-      `).all(this.projectId) as any[];
-
-      for (const item of existing) {
-        const similarity = this.calculateSimilarity(content, item.description);
-        if (similarity > 0.7) {
-          return { ...item, table: 'goals' };
-        }
-      }
+      return existing || null;
     }
 
     return null;
   }
 
-  /**
-   * Calculate text similarity (simple word overlap)
-   */
-  private calculateSimilarity(text1: string, text2: string): number {
-    const words1 = new Set(text1.toLowerCase().split(/\s+/));
-    const words2 = new Set(text2.toLowerCase().split(/\s+/));
-
-    const intersection = new Set([...words1].filter(w => words2.has(w)));
-    const union = new Set([...words1, ...words2]);
-
-    return intersection.size / union.size;
-  }
-
-  /**
-   * Update existing context
-   */
-  private updateExisting(
-    existing: any,
+  private async updateExisting(
+    trx: Knex.Transaction,
+    existing: MemoryRow,
     input: RememberInput,
     gitContext: RememberResult['gitContext'] | null,
     fileContext?: RememberResult['fileContext']
-  ): RememberResult {
-    const timestamp = Date.now();
-    const files = input.metadata?.files || [];
-    const branch = input.metadata?.branch || gitContext?.branch || 'unknown';
-
-    switch (existing.table) {
-      case 'active_work':
-        // Store file context in the context field as JSON if present
-        const contextData = input.metadata?.context || existing.context;
-        const enrichedContext = fileContext 
-          ? JSON.stringify({ text: contextData, fileContext })
-          : contextData;
-        
-        this.db.prepare(`
-          UPDATE active_work 
-          SET task = ?, context = ?, files = ?, branch = ?, timestamp = ?
-          WHERE id = ?
-        `).run(
-          input.content,
-          enrichedContext,
-          JSON.stringify(files),
-          branch,
-          timestamp,
-          existing.id
-        );
-        break;
-
-      case 'constraints':
-        const keyValue = this.parseKeyValue(input.content);
-        this.db.prepare(`
-          UPDATE constraints 
-          SET value = ?, reasoning = ?, timestamp = ?
-          WHERE id = ?
-        `).run(
-          keyValue.value,
-          input.metadata?.reasoning || existing.reasoning,
-          timestamp,
-          existing.id
-        );
-        break;
-
-      case 'goals':
-        this.db.prepare(`
-          UPDATE goals 
-          SET description = ?, target_date = ?, timestamp = ?
-          WHERE id = ?
-        `).run(
-          input.content,
-          input.metadata?.target_date || existing.target_date,
-          timestamp,
-          existing.id
-        );
-        break;
-    }
-
-    return {
-      action: 'updated',
-      id: existing.id,
-      type: input.type,
-      reason: 'Found similar existing context and updated it',
-      gitContext: gitContext || undefined,
-      fileContext
-    };
+  ): Promise<void> {
+    const now = new Date();
+    const metadata = this.buildMetadata(input, gitContext, fileContext);
+    await trx('memory_entries')
+      .where({ id: existing.id })
+      .update({
+        content: input.content,
+        metadata,
+        status: this.resolveStatus(input.type, metadata),
+        created_at: now,
+        updated_at: now,
+      });
   }
 
-  /**
-   * Store new context
-   */
-  private storeNew(
+  private async storeNew(
+    trx: Knex.Transaction,
     input: RememberInput,
-    gitContext: RememberResult['gitContext'] | null,
-    fileContext?: RememberResult['fileContext']
-  ): RememberResult {
-    const { type, content, metadata } = input;
-    const timestamp = Date.now();
+    gitContext: RememberResult['gitContext'] | null
+  ): Promise<string> {
     const id = randomUUID();
-    const files = metadata?.files || [];
-    const branch = metadata?.branch || gitContext?.branch || 'unknown';
-
-    switch (type) {
-      case 'active_work':
-        // Store file context in the context field as JSON if present
-        const contextData = metadata?.context || '';
-        const enrichedContext = fileContext 
-          ? JSON.stringify({ text: contextData, fileContext })
-          : contextData;
-        
-        this.db.prepare(`
-          INSERT INTO active_work (id, project_id, task, context, files, branch, timestamp, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'active')
-        `).run(
-          id,
-          this.projectId,
-          content,
-          enrichedContext,
-          JSON.stringify(files),
-          branch,
-          timestamp
-        );
-        break;
-
-      case 'constraint':
-        const keyValue = this.parseKeyValue(content);
-        this.db.prepare(`
-          INSERT INTO constraints (id, project_id, key, value, reasoning, timestamp)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `).run(
-          id,
-          this.projectId,
-          keyValue.key,
-          keyValue.value,
-          metadata?.reasoning || '',
-          timestamp
-        );
-        break;
-
-      case 'problem':
-        this.db.prepare(`
-          INSERT INTO problems (id, project_id, description, context, status, timestamp)
-          VALUES (?, ?, ?, ?, 'open', ?)
-        `).run(
-          id,
-          this.projectId,
-          content,
-          JSON.stringify(metadata?.context || {}),
-          timestamp
-        );
-        break;
-
-      case 'goal':
-        this.db.prepare(`
-          INSERT INTO goals (id, project_id, description, target_date, status, timestamp)
-          VALUES (?, ?, ?, ?, 'planned', ?)
-        `).run(
-          id,
-          this.projectId,
-          content,
-          metadata?.target_date || null,
-          timestamp
-        );
-        break;
-
-      case 'decision':
-        // Store alternatives in reasoning as JSON if provided
-        const reasoning = metadata?.reasoning || '';
-        const reasoningWithAlternatives = metadata?.alternatives 
-          ? JSON.stringify({ reasoning, alternatives: metadata.alternatives })
-          : reasoning;
-        
-        this.db.prepare(`
-          INSERT INTO decisions (id, project_id, type, description, reasoning, timestamp)
-          VALUES (?, ?, 'other', ?, ?, ?)
-        `).run(
-          id,
-          this.projectId,
-          content,
-          reasoningWithAlternatives,
-          timestamp
-        );
-        break;
-
-      case 'note':
-        this.db.prepare(`
-          INSERT INTO notes (id, project_id, content, tags, timestamp)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(
-          id,
-          this.projectId,
-          content,
-          JSON.stringify(metadata?.tags || []),
-          timestamp
-        );
-        break;
-
-      case 'caveat':
-        // AI self-reporting mistakes and tech debt
-        const category = metadata?.category || 'workaround';
-        const severity = metadata?.severity || 'medium';
-        const verified = metadata?.verified === true ? 1 : 0;
-        const affects_production = metadata?.affects_production === true ? 1 : 0;
-        
-        this.db.prepare(`
-          INSERT INTO caveats (
-            id, project_id, description, category, severity,
-            attempted, error, recovery, verified, action_required,
-            affects_production, timestamp, resolved
-          )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-        `).run(
-          id,
-          this.projectId,
-          content,
-          category,
-          severity,
-          metadata?.attempted || null,
-          metadata?.error || null,
-          metadata?.recovery || null,
-          verified,
-          metadata?.action_required || null,
-          affects_production,
-          timestamp
-        );
-        break;
-    }
-
-    return {
-      action: 'created',
+    const metadata = this.buildMetadata(input, gitContext);
+    const now = new Date();
+    await trx('memory_entries').insert({
       id,
-      type,
-      reason: 'Stored new context',
-      gitContext: gitContext || undefined,
-      fileContext
-    };
+      project_key: this.projectKey,
+      type: input.type,
+      content: input.content,
+      metadata,
+      status: this.resolveStatus(input.type, metadata),
+      created_at: now,
+      updated_at: now,
+    });
+    return id;
   }
 
-  /**
-   * Parse "Key: Value" format
-   */
+  private buildMetadata(
+    input: RememberInput,
+    gitContext: RememberResult['gitContext'] | null,
+    fileContext?: RememberResult['fileContext']
+  ): Record<string, unknown> {
+    const metadata = { ...(input.metadata || {}) };
+    if (fileContext && fileContext.files.length > 0) {
+      metadata.fileContext = fileContext.files;
+    }
+    if (gitContext && !metadata.branch) {
+      metadata.branch = gitContext.branch;
+    }
+
+    if (input.type === 'constraint') {
+      const keyValue = this.parseKeyValue(input.content);
+      metadata.key = keyValue.key;
+      metadata.value = keyValue.value;
+      metadata.reasoning = metadata.reasoning || '';
+    }
+
+    if (input.type === 'caveat') {
+      metadata.category = metadata.category || 'workaround';
+      metadata.severity = metadata.severity || 'medium';
+      metadata.verified = metadata.verified === true;
+      metadata.affects_production = metadata.affects_production === true;
+      metadata.resolved = metadata.resolved === true;
+    }
+
+    if (input.type === 'goal') {
+      metadata.status = metadata.status || 'planned';
+      metadata.target_date = metadata.target_date || null;
+    }
+
+    if (input.type === 'problem') {
+      metadata.status = metadata.status || 'open';
+    }
+
+    if (input.type === 'active_work') {
+      metadata.status = metadata.status || 'active';
+      metadata.files = Array.isArray(metadata.files) ? metadata.files : [];
+    }
+
+    return metadata;
+  }
+
+  private resolveStatus(type: RememberInput['type'], metadata: Record<string, unknown>): string | null {
+    if (type === 'active_work') {
+      return String(metadata.status || 'active');
+    }
+    if (type === 'problem') {
+      return String(metadata.status || 'open');
+    }
+    if (type === 'goal') {
+      return String(metadata.status || 'planned');
+    }
+    if (type === 'caveat') {
+      return metadata.resolved === true ? 'resolved' : 'open';
+    }
+    return null;
+  }
+
+  private calculateSimilarity(text1: string, text2: string): number {
+    const words1 = new Set(text1.toLowerCase().split(/\s+/).filter(Boolean));
+    const words2 = new Set(text2.toLowerCase().split(/\s+/).filter(Boolean));
+    if (words1.size === 0 && words2.size === 0) {
+      return 1;
+    }
+    const intersection = new Set([...words1].filter((word) => words2.has(word)));
+    const union = new Set([...words1, ...words2]);
+    return union.size === 0 ? 0 : intersection.size / union.size;
+  }
+
   private parseKeyValue(content: string): { key: string; value: string } {
     const match = content.match(/^(.+?)[:=](.+)$/);
     if (match) {
       return {
         key: match[1].trim(),
-        value: match[2].trim()
+        value: match[2].trim(),
       };
     }
-    // If no separator, treat whole thing as key with empty value
     return {
       key: content.trim(),
-      value: ''
+      value: '',
     };
   }
 }
-

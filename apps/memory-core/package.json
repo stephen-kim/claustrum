@@ -1,0 +1,36 @@
+{
+  "name": "@context-sync/memory-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/http-server.js",
+  "types": "dist/http-server.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && prisma generate --schema prisma/schema.prisma",
+    "dev": "tsx watch src/http-server.ts",
+    "start:http": "node dist/http-server.js",
+    "postinstall": "prisma generate --schema prisma/schema.prisma",
+    "db:migrate": "prisma migrate deploy --schema prisma/schema.prisma",
+    "db:seed": "tsx prisma/seed.ts",
+    "test": "node scripts/rest-smoke-test.mjs",
+    "test:mock": "node scripts/rest-mock-scenarios-test.mjs"
+  },
+  "dependencies": {
+    "@context-sync/shared": "workspace:*",
+    "@notionhq/client": "^5.4.0",
+    "@prisma/client": "^5.22.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^20.11.0",
+    "prisma": "^5.22.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.3.3"
+  }
+}

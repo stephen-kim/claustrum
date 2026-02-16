@@ -1,36 +1,30 @@
 #!/usr/bin/env node
 
 import { ContextSyncServer } from './server.js';
+import { logger } from './logger.js';
 
 async function main() {
-  // Support custom database path for development/testing
-  let storagePath: string | undefined;
-  
-  // Check for --db-path argument
-  const dbPathIndex = process.argv.indexOf('--db-path');
-  if (dbPathIndex !== -1 && process.argv[dbPathIndex + 1]) {
-    storagePath = process.argv[dbPathIndex + 1];
-    console.error(`Context Sync - Using custom database: ${storagePath}`);
-  }
-  // Check for environment variable
-  else if (process.env.CONTEXT_SYNC_DB_PATH) {
-    storagePath = process.env.CONTEXT_SYNC_DB_PATH;
-    console.error(`Context Sync - Using database from env: ${storagePath}`);
-  } else {
-    console.error('Context Sync - 9 Essential Tools');
+  const databaseUrlIndex = process.argv.indexOf('--database-url');
+  if (databaseUrlIndex !== -1 && process.argv[databaseUrlIndex + 1]) {
+    process.env.DATABASE_URL = process.argv[databaseUrlIndex + 1];
   }
 
-  const server = new ContextSyncServer(storagePath);
+  const legacyDbPathIndex = process.argv.indexOf('--db-path');
+  if (legacyDbPathIndex !== -1) {
+    logger.warn('`--db-path` is deprecated and ignored. Use DATABASE_URL or CONTEXT_SYNC_DB_* variables.');
+  }
+
+  const server = new ContextSyncServer();
   
   // Handle graceful shutdown
   process.on('SIGINT', () => {
-    console.error('\nShutting down Context Sync...');
+    logger.info('Shutting down Context Sync...');
     server.close();
     process.exit(0);
   });
 
   process.on('SIGTERM', () => {
-    console.error('\nShutting down Context Sync...');
+    logger.info('Shutting down Context Sync...');
     server.close();
     process.exit(0);
   });
@@ -39,7 +33,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error('Failed to start Context Sync:', error);
+  logger.error('Failed to start Context Sync:', error);
   process.exit(1);
 });
-

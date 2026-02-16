@@ -146,7 +146,10 @@ function showAutoConfigSummary(status) {
     log(colors.green, '\nNo auto-configuration issues were reported.');
   }
 
-  log(colors.gray, '\nFor manual setup steps, see docs/CONFIG.md.\n');
+  log(
+    colors.gray,
+    '\nFor manual setup steps, see the project Wiki: https://github.com/stephen-kim/context-sync/wiki\n'
+  );
 }
 
 async function fetchNotionPages(token) {
@@ -383,5 +386,4 @@ main().catch(error => {
   log(colors.red, `\nERROR Setup failed: ${error.message}`);
   process.exit(1);
 });
-
 

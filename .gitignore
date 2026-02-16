@@ -8,6 +8,8 @@ yarn-error.log*
 dist/
 build/
 *.tsbuildinfo
+.next/
+apps/*/.next/
 
 # Environment
 .env

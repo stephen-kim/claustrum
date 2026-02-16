@@ -1,0 +1,75 @@
+name: Notion Merge Sync
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync-notion:
+    if: ${{ secrets.MEMORY_CORE_URL != '' && secrets.MEMORY_CORE_API_KEY != '' && secrets.NOTION_WORKSPACE_KEY != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Build merge summary
+        shell: bash
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          {
+            echo "# Merge Summary"
+            echo
+            echo "- Repository: ${GITHUB_REPOSITORY}"
+            echo "- Branch: ${GITHUB_REF_NAME}"
+            echo "- Commit: ${SHORT_SHA}"
+            echo "- Actor: ${GITHUB_ACTOR}"
+            echo "- Run URL: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo "## Commit Message"
+            echo
+            git log -1 --pretty=%B
+            echo
+            echo "## Changed Files"
+            echo
+            git diff --name-only HEAD^ HEAD | sed 's/^/- /'
+          } > .notion_merge_summary.md
+
+      - name: Sync to Notion via memory-core
+        shell: bash
+        env:
+          MEMORY_CORE_URL: ${{ secrets.MEMORY_CORE_URL }}
+          MEMORY_CORE_API_KEY: ${{ secrets.MEMORY_CORE_API_KEY }}
+          NOTION_WORKSPACE_KEY: ${{ secrets.NOTION_WORKSPACE_KEY }}
+          NOTION_PAGE_ID: ${{ secrets.NOTION_PAGE_ID }}
+          NOTION_PARENT_PAGE_ID: ${{ secrets.NOTION_PARENT_PAGE_ID }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          with open(".notion_merge_summary.md", "r", encoding="utf-8") as f:
+            content = f.read()
+          payload = {
+            "workspace_key": os.environ["NOTION_WORKSPACE_KEY"],
+            "title": f"Merge Sync: {os.environ['GITHUB_REPOSITORY']} @ {os.environ['GITHUB_SHA'][:7]}",
+            "content": content,
+          }
+          page_id = os.environ.get("NOTION_PAGE_ID", "").strip()
+          parent_id = os.environ.get("NOTION_PARENT_PAGE_ID", "").strip()
+          if page_id:
+            payload["page_id"] = page_id
+          if parent_id:
+            payload["parent_page_id"] = parent_id
+          with open(".notion_payload.json", "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False)
+          PY
+
+          curl -fsS \
+            -X POST "${MEMORY_CORE_URL}/v1/notion/write" \
+            -H "Authorization: Bearer ${MEMORY_CORE_API_KEY}" \
+            -H "Content-Type: application/json" \
+            --data-binary @.notion_payload.json

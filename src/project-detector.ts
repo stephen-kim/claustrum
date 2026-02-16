@@ -5,6 +5,7 @@ import { promises as fsAsync } from 'fs';
 import * as path from 'path';
 import type { Storage } from './storage.js';
 import { PathNormalizer } from './path-normalizer.js';
+import { logger } from './logger.js';
 
 export interface ProjectMetadata {
   name: string;
@@ -32,7 +33,7 @@ export class ProjectDetector {
     // Validate and normalize path
     const validation = PathNormalizer.validatePath(projectPath);
     if (!validation.valid) {
-      console.warn(`Invalid project path: ${validation.reason}`);
+      logger.warn(`Invalid project path: ${validation.reason}`);
       return null;
     }
 
@@ -103,7 +104,7 @@ export class ProjectDetector {
         techStack = await this.detectPythonTechStack(projectPath);
       }
     } catch (error) {
-      console.error('Error extracting metadata:', error);
+      logger.warn('Error extracting metadata:', error);
     }
 
     return {
@@ -283,34 +284,33 @@ export class ProjectDetector {
     const metadata = await this.detectFromPath(normalizedPath);
     
     if (!metadata) {
-      console.error(' No project detected at:', displayPath);
+      logger.warn(`No project detected at: ${displayPath}`);
       return;
     }
 
     // Check if project already exists (using normalized path)
-    const existing = this.storage.findProjectByPath(normalizedPath);
+    const existing = await this.storage.findProjectByPath(normalizedPath);
 
     if (existing) {
       // Update tech stack if changed
       const newStack = [...new Set([...existing.techStack, ...metadata.techStack])];
-      this.storage.updateProject(existing.id, {
+      await this.storage.updateProject(existing.id, {
         techStack: newStack,
         architecture: metadata.architecture || existing.architecture,
       });
       
       //  No longer setting current project - that's session state now!
-      console.error(` Updated project: ${existing.name}`);
+      logger.info(`Updated project: ${existing.name}`);
     } else {
       // Create new project (using normalized path for storage)
       const projectName = metadata.name || path.basename(normalizedPath);
-      const project = this.storage.createProject(projectName, normalizedPath);
-      this.storage.updateProject(project.id, {
+      const project = await this.storage.createProject(projectName, normalizedPath);
+      await this.storage.updateProject(project.id, {
         techStack: metadata.techStack,
         architecture: metadata.architecture,
       });
-      console.error(` Auto-detected project: ${metadata.name}`);
-      console.error(`   Tech Stack: ${metadata.techStack.join(', ')}`);
+      logger.info(`Auto-detected project: ${metadata.name}`);
+      logger.info(`Tech stack: ${metadata.techStack.join(', ')}`);
     }
   }
 }
-

@@ -7,20 +7,28 @@ export const CORE_TOOLS = [
   // ========== PROJECT MANAGEMENT ==========
   {
     name: 'set_project',
-    description: 'Initialize a project for context tracking. Detects project type, tech stack, and architecture. Call this once when starting work on a new project. This is the foundation - run this first.',
+    description: 'Initialize or switch project memory scope using a logical key.',
     inputSchema: {
       type: 'object',
       properties: {
-        path: { 
+        key: {
           type: 'string',
-          description: 'Absolute path to project directory'
+          description: 'Logical project key: e.g. "video-transcriber", "homeassistant", "project:abc".'
         },
-        purpose: {
+        label: {
           type: 'string',
-          description: 'Optional: What this project does (if not in README)'
+          description: 'Optional display label for this project key.'
+        },
+        metadata: {
+          type: 'object',
+          description: 'Optional project metadata JSON.'
+        },
+        enable_git_hooks: {
+          type: 'boolean',
+          description: 'Optional. Default false. When true, installs Context Sync git hooks in the current repository. If MEMORY_CORE_URL/API_KEY/WORKSPACE_KEY are set, hook events are forwarded to memory-core audit logs.'
         }
       },
-      required: ['path']
+      required: ['key']
     }
   },
 
@@ -135,6 +143,10 @@ This approach leverages YOUR (the AI's) conversation understanding while keeping
         metadata: {
           type: 'object',
           description: 'Optional: Related files, code snippets, links, etc. For caveats: MUST include severity, category, attempted, recovery, verified, action_required, affects_production'
+        },
+        project_key: {
+          type: 'string',
+          description: 'Optional explicit scope override. If omitted, current active project key is used.'
         }
       },
       required: ['type', 'content']
@@ -154,6 +166,14 @@ This approach leverages YOUR (the AI's) conversation understanding while keeping
         limit: {
           type: 'number',
           description: 'Optional: How many recent items to return per category (default: 10)'
+        },
+        project_key: {
+          type: 'string',
+          description: 'Optional explicit project key scope override.'
+        },
+        all_projects: {
+          type: 'boolean',
+          description: 'Optional: when true, recall across all projects instead of one project scope.'
         }
       }
     }
@@ -296,5 +316,3 @@ This approach leverages YOUR (the AI's) conversation understanding while keeping
     }
   }
 ] as const;
-
-

@@ -6,6 +6,7 @@ import * as path from 'path';
 import * as chokidar from 'chokidar';
 import type { Storage } from './storage.js';
 import { ProjectDetector } from './project-detector.js';
+import { logger } from './logger.js';
 
 export interface FileContent {
   path: string;
@@ -52,10 +53,10 @@ export class WorkspaceDetector {
     
     // Auto-detect and initialize project (async, but don't block)
     this.projectDetector.createOrUpdateProject(workspacePath).catch(error => {
-      console.error('Error auto-detecting project:', error);
+      logger.warn('Error auto-detecting project:', error);
     });
     
-    console.error(` Workspace set: ${workspacePath}`);
+    logger.info(`Workspace set: ${workspacePath}`);
   }
 
   /**
@@ -96,10 +97,10 @@ export class WorkspaceDetector {
       })
       .on('error', (error: unknown) => {
         const message = error instanceof Error ? error : String(error);
-        console.error('File watcher error:', message);
+        logger.warn(`File watcher error: ${message}`);
       });
 
-    console.error(' File watcher active for cache invalidation');
+    logger.debug('File watcher active for cache invalidation');
   }
 
   /**
@@ -109,7 +110,7 @@ export class WorkspaceDetector {
     // Remove from file cache
     if (this.fileCache.has(filePath)) {
       this.fileCache.delete(filePath);
-      console.error(` Cache invalidated: ${path.relative(this.currentWorkspace || '', filePath)}`);
+      logger.debug(`Cache invalidated: ${path.relative(this.currentWorkspace || '', filePath)}`);
     }
 
     // Also remove any related cached files (for relative path variations)
@@ -153,12 +154,12 @@ export class WorkspaceDetector {
       const stats = await fsAsync.stat(fullPath);
       
       if (stats.size > this.MAX_FILE_SIZE) {
-        console.error(`  File too large (${(stats.size / 1024 / 1024).toFixed(1)}MB), skipping: ${relativePath}`);
+        logger.warn(`File too large (${(stats.size / 1024 / 1024).toFixed(1)}MB), skipping: ${relativePath}`);
         return null;
       }
       
       if (stats.size > this.WARN_FILE_SIZE) {
-        console.error(`  Large file detected (${(stats.size / 1024 / 1024).toFixed(1)}MB): ${relativePath}`);
+        logger.warn(`Large file detected (${(stats.size / 1024 / 1024).toFixed(1)}MB): ${relativePath}`);
       }
       
       const content = await fsAsync.readFile(fullPath, 'utf8');
@@ -177,7 +178,7 @@ export class WorkspaceDetector {
 
       return fileContent;
     } catch (error) {
-      console.error(`Error reading file ${fullPath}:`, error);
+      logger.warn(`Error reading file ${fullPath}:`, error);
       return null;
     }
   }
@@ -446,8 +447,7 @@ export class WorkspaceDetector {
     if (this.fileWatcher) {
       this.fileWatcher.close();
       this.fileWatcher = null;
-      console.error(' File watcher disposed');
+      logger.debug('File watcher disposed');
     }
   }
 }
-
