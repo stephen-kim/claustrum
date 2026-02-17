@@ -1,12 +1,34 @@
-ALTER TYPE "MonorepoContextMode"
-  ADD VALUE IF NOT EXISTS 'split_on_demand';
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'MonorepoContextMode') THEN
+    CREATE TYPE "MonorepoContextMode_next" AS ENUM (
+      'shared_repo',
+      'split_on_demand',
+      'split_auto',
+      'split_subproject'
+    );
 
-ALTER TYPE "MonorepoContextMode"
-  ADD VALUE IF NOT EXISTS 'split_auto';
+    ALTER TABLE "workspace_settings"
+      ALTER COLUMN "monorepo_context_mode" DROP DEFAULT;
 
-UPDATE "workspace_settings"
-SET "monorepo_context_mode" = 'split_auto'
-WHERE "monorepo_context_mode"::text = 'split_subproject';
+    ALTER TABLE "workspace_settings"
+      ALTER COLUMN "monorepo_context_mode" TYPE "MonorepoContextMode_next"
+      USING (
+        CASE "monorepo_context_mode"::text
+          WHEN 'split_subproject' THEN 'split_auto'
+          ELSE "monorepo_context_mode"::text
+        END
+      )::"MonorepoContextMode_next";
+
+    DROP TYPE "MonorepoContextMode";
+    ALTER TYPE "MonorepoContextMode_next" RENAME TO "MonorepoContextMode";
+
+    ALTER TABLE "workspace_settings"
+      ALTER COLUMN "monorepo_context_mode" SET DEFAULT 'shared_repo';
+  END IF;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
 
 CREATE TABLE IF NOT EXISTS "monorepo_subproject_policies" (
   "id" UUID NOT NULL DEFAULT gen_random_uuid(),

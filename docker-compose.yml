@@ -3,7 +3,7 @@
 services:
   postgres:
     profiles: ["localdb"]
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: claustrum-postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-claustrum}

@@ -2,24 +2,38 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 DO $$
 BEGIN
-  ALTER TYPE "ProjectRole" ADD VALUE IF NOT EXISTS 'OWNER';
-  ALTER TYPE "ProjectRole" ADD VALUE IF NOT EXISTS 'MAINTAINER';
-  ALTER TYPE "ProjectRole" ADD VALUE IF NOT EXISTS 'WRITER';
-  ALTER TYPE "ProjectRole" ADD VALUE IF NOT EXISTS 'READER';
+  IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ProjectRole') THEN
+    CREATE TYPE "ProjectRole_next" AS ENUM (
+      'OWNER',
+      'MAINTAINER',
+      'WRITER',
+      'READER',
+      'ADMIN',
+      'MEMBER'
+    );
+
+    ALTER TABLE "project_members"
+      ALTER COLUMN "role" DROP DEFAULT;
+
+    ALTER TABLE "project_members"
+      ALTER COLUMN "role" TYPE "ProjectRole_next"
+      USING (
+        CASE "role"::text
+          WHEN 'ADMIN' THEN 'OWNER'
+          WHEN 'MEMBER' THEN 'WRITER'
+          ELSE "role"::text
+        END
+      )::"ProjectRole_next";
+
+    DROP TYPE "ProjectRole";
+    ALTER TYPE "ProjectRole_next" RENAME TO "ProjectRole";
+
+    ALTER TABLE "project_members"
+      ALTER COLUMN "role" SET DEFAULT 'READER';
+  END IF;
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
-
-UPDATE "project_members"
-SET "role" = 'OWNER'
-WHERE "role" = 'ADMIN';
-
-UPDATE "project_members"
-SET "role" = 'WRITER'
-WHERE "role" = 'MEMBER';
-
-ALTER TABLE "project_members"
-  ALTER COLUMN "role" SET DEFAULT 'READER';
 
 DO $$
 BEGIN
