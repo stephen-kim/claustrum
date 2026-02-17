@@ -11,12 +11,28 @@ on:
 
 jobs:
   forward-ci-event:
-    if: ${{ github.event.workflow_run.name != 'Claustrum CI Events' && secrets.MEMORY_CORE_URL != '' && secrets.MEMORY_CORE_API_KEY != '' && secrets.MEMORY_CORE_WORKSPACE_KEY != '' }}
+    if: ${{ github.event.workflow_run.name != 'Claustrum CI Events' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
     steps:
+      - name: Check required secrets
+        id: config
+        shell: bash
+        env:
+          MEMORY_CORE_URL: ${{ secrets.MEMORY_CORE_URL }}
+          MEMORY_CORE_API_KEY: ${{ secrets.MEMORY_CORE_API_KEY }}
+          MEMORY_CORE_WORKSPACE_KEY: ${{ secrets.MEMORY_CORE_WORKSPACE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${MEMORY_CORE_URL:-}" ] || [ -z "${MEMORY_CORE_API_KEY:-}" ] || [ -z "${MEMORY_CORE_WORKSPACE_KEY:-}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
       - name: Send workflow result to memory-core
+        if: ${{ steps.config.outputs.enabled == 'true' }}
         shell: bash
         env:
           MEMORY_CORE_URL: ${{ secrets.MEMORY_CORE_URL }}
