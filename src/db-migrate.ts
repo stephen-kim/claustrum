@@ -19,10 +19,10 @@ async function runMigrations(): Promise<void> {
 
   try {
     const [batchNo, log] = await db.migrate.latest();
-    console.error(`[context-sync:migrate] batch ${batchNo} applied (${log.length} migration(s)).`);
+    console.error(`[claustrum:migrate] batch ${batchNo} applied (${log.length} migration(s)).`);
     if (log.length > 0) {
       for (const migration of log) {
-        console.error(`[context-sync:migrate] - ${migration}`);
+        console.error(`[claustrum:migrate] - ${migration}`);
       }
     }
   } finally {
@@ -31,6 +31,6 @@ async function runMigrations(): Promise<void> {
 }
 
 runMigrations().catch((error) => {
-  console.error('[context-sync:migrate] failed:', error);
+  console.error('[claustrum:migrate] failed:', error);
   process.exit(1);
 });

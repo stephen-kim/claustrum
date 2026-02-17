@@ -59,12 +59,12 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
     "config": {
       "webhook_url": "https://hooks.slack.com/services/XXX/YYY/ZZZ",
       "default_channel": "#audit-core",
-      "action_prefixes": ["integration.", "workspace_settings.", "git."],
+      "action_prefixes": ["integration.", "workspace_settings.", "git.", "ci."],
       "format": "detailed",
       "include_target_json": true,
       "mask_secrets": true,
       "routes": [
-        { "action_prefix": "git.", "channel": "#audit-devflow", "min_severity": "medium" },
+        { "action_prefix": "ci.", "channel": "#audit-devflow", "min_severity": "medium" },
         { "action_prefix": "integration.", "channel": "#audit-security", "min_severity": "high" }
       ],
       "severity_rules": [
@@ -110,6 +110,9 @@ Severity values:
 ## Env vs Admin UI Priority
 
 - Default: workspace config in Admin UI wins over env fallback.
+- Exception: `audit_reasoner` uses `ENV > Admin UI` precedence.
+  - Env keys: `MEMORY_CORE_AUDIT_REASONER_*`, `OPENAI_API_KEY`, `GEMINI_API_KEY`
+  - Admin UI fallback: Integrations -> Audit Reasoner
 - Lock option:
   - `MEMORY_CORE_INTEGRATION_LOCKED_PROVIDERS=slack`
   - When locked, Admin UI updates are blocked and env-only is enforced.

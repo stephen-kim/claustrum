@@ -13,44 +13,58 @@ import {
   NotFoundError,
   ValidationError,
 } from './service.js';
-import { memoryTypeSchema, resolutionKindSchema } from '@context-sync/shared';
+import {
+  memorySourceSchema,
+  memoryStatusSchema,
+  memoryTypeSchema,
+  monorepoModeSchema,
+  resolutionKindSchema,
+} from '@claustrum/shared';
 import { ImportSource, IntegrationProvider, ProjectRole } from '@prisma/client';
-import { NotionClientAdapter } from './notion-client.js';
-import { JiraClientAdapter } from './jira-client.js';
-import { ConfluenceClientAdapter } from './confluence-client.js';
-import { LinearClientAdapter } from './linear-client.js';
-import { SlackAuditNotifier } from './audit-slack-notifier.js';
+import { NotionClientAdapter } from './integrations/notion-client.js';
+import { JiraClientAdapter } from './integrations/jira-client.js';
+import { ConfluenceClientAdapter } from './integrations/confluence-client.js';
+import { LinearClientAdapter } from './integrations/linear-client.js';
+import { SlackAuditNotifier } from './integrations/audit-slack-notifier.js';
+import { AuditReasoner } from './integrations/audit-reasoner.js';
 
 const config = loadConfig();
 const logger = new Logger(config.logLevel);
 const prisma = getPrismaClient();
-const notionClient = config.notionToken
+const envIntegrationEnabled = !config.integrationIgnoreEnv;
+const notionClient = envIntegrationEnabled && config.notionToken
   ? new NotionClientAdapter(config.notionToken, config.notionDefaultParentPageId)
   : undefined;
 const jiraClient =
-  config.jiraBaseUrl && config.jiraEmail && config.jiraApiToken
+  envIntegrationEnabled && config.jiraBaseUrl && config.jiraEmail && config.jiraApiToken
     ? new JiraClientAdapter(config.jiraBaseUrl, config.jiraEmail, config.jiraApiToken)
     : undefined;
 const confluenceClient =
-  config.confluenceBaseUrl && config.confluenceEmail && config.confluenceApiToken
+  envIntegrationEnabled &&
+  config.confluenceBaseUrl &&
+  config.confluenceEmail &&
+  config.confluenceApiToken
     ? new ConfluenceClientAdapter(
         config.confluenceBaseUrl,
         config.confluenceEmail,
         config.confluenceApiToken
       )
     : undefined;
-const linearClient = config.linearApiKey
+const linearClient = envIntegrationEnabled && config.linearApiKey
   ? new LinearClientAdapter(config.linearApiKey, config.linearApiUrl)
   : undefined;
-const auditSlackNotifier = new SlackAuditNotifier({
-  webhookUrl: config.auditSlackWebhookUrl,
-  actionPrefixes: config.auditSlackActionPrefixes,
-  defaultChannel: config.auditSlackDefaultChannel,
-  format: config.auditSlackFormat,
-  includeTargetJson: config.auditSlackIncludeTargetJson,
-  maskSecrets: config.auditSlackMaskSecrets,
-  logger,
-});
+const auditSlackNotifier = envIntegrationEnabled
+  ? new SlackAuditNotifier({
+      webhookUrl: config.auditSlackWebhookUrl,
+      actionPrefixes: config.auditSlackActionPrefixes,
+      defaultChannel: config.auditSlackDefaultChannel,
+      format: config.auditSlackFormat,
+      includeTargetJson: config.auditSlackIncludeTargetJson,
+      maskSecrets: config.auditSlackMaskSecrets,
+      logger,
+    })
+  : undefined;
+const auditReasoner = new AuditReasoner(logger);
 const service = new MemoryCoreService(
   prisma,
   notionClient,
@@ -59,7 +73,30 @@ const service = new MemoryCoreService(
   confluenceClient,
   linearClient,
   auditSlackNotifier,
-  toLockedIntegrationProviders(config.integrationLockedProviders)
+  auditReasoner,
+  toLockedIntegrationProviders(config.integrationLockedProviders),
+  {
+    enabled: envIntegrationEnabled ? config.auditReasonerEnabled : false,
+    preferEnv: envIntegrationEnabled ? config.auditReasonerPreferEnv : false,
+    providerOrder: envIntegrationEnabled ? config.auditReasonerProviderOrder : [],
+    providers: {
+      openai: {
+        model: config.auditReasonerOpenAiModel,
+        apiKey: envIntegrationEnabled ? config.auditReasonerOpenAiApiKey : undefined,
+        baseUrl: config.auditReasonerOpenAiBaseUrl,
+      },
+      claude: {
+        model: config.auditReasonerClaudeModel,
+        apiKey: envIntegrationEnabled ? config.auditReasonerClaudeApiKey : undefined,
+        baseUrl: config.auditReasonerClaudeBaseUrl,
+      },
+      gemini: {
+        model: config.auditReasonerGeminiModel,
+        apiKey: envIntegrationEnabled ? config.auditReasonerGeminiApiKey : undefined,
+        baseUrl: config.auditReasonerGeminiBaseUrl,
+      },
+    },
+  }
 );
 
 const app = express();
@@ -150,6 +187,11 @@ app.get('/v1/memories', async (req, res, next) => {
         project_key: z.string().optional(),
         type: memoryTypeSchema.optional(),
         q: z.string().optional(),
+        mode: z.enum(['hybrid', 'keyword', 'semantic']).optional(),
+        status: memoryStatusSchema.optional(),
+        source: memorySourceSchema.optional(),
+        confidence_min: z.coerce.number().min(0).max(1).optional(),
+        confidence_max: z.coerce.number().min(0).max(1).optional(),
         limit: z.coerce.number().int().positive().optional(),
         since: z.string().datetime().optional(),
       })
@@ -160,6 +202,30 @@ app.get('/v1/memories', async (req, res, next) => {
       query,
     });
     res.json({ memories: data });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch('/v1/memories/:id', async (req, res, next) => {
+  try {
+    const params = z.object({ id: z.string().min(1) }).parse(req.params);
+    const body = z
+      .object({
+        content: z.string().min(1).optional(),
+        status: memoryStatusSchema.optional(),
+        source: memorySourceSchema.optional(),
+        confidence: z.coerce.number().min(0).max(1).optional(),
+        metadata: z.record(z.unknown()).nullable().optional(),
+        evidence: z.record(z.unknown()).nullable().optional(),
+      })
+      .parse(req.body);
+    const result = await service.updateMemory({
+      auth: (req as AuthedRequest).auth!,
+      memoryId: params.id,
+      input: body,
+    });
+    res.json(result);
   } catch (error) {
     next(error);
   }
@@ -319,8 +385,36 @@ app.put('/v1/workspace-settings', async (req, res, next) => {
         workspace_key: z.string().min(1),
         resolution_order: z.array(resolutionKindSchema).optional(),
         auto_create_project: z.boolean().optional(),
+        auto_create_project_subprojects: z.boolean().optional(),
+        auto_switch_repo: z.boolean().optional(),
+        auto_switch_subproject: z.boolean().optional(),
+        allow_manual_pin: z.boolean().optional(),
+        enable_git_events: z.boolean().optional(),
+        enable_commit_events: z.boolean().optional(),
+        enable_merge_events: z.boolean().optional(),
+        enable_checkout_events: z.boolean().optional(),
+        checkout_debounce_seconds: z.coerce.number().int().min(0).max(3600).optional(),
+        checkout_daily_limit: z.coerce.number().int().positive().max(50000).optional(),
+        enable_auto_extraction: z.boolean().optional(),
+        auto_extraction_mode: z.enum(['draft_only', 'auto_confirm']).optional(),
+        auto_confirm_min_confidence: z.coerce.number().min(0).max(1).optional(),
+        auto_confirm_allowed_event_types: z.array(z.enum(['post_commit', 'post_merge', 'post_checkout'])).optional(),
+        auto_confirm_keyword_allowlist: z.array(z.string().min(1)).optional(),
+        auto_confirm_keyword_denylist: z.array(z.string().min(1)).optional(),
+        auto_extraction_batch_size: z.coerce.number().int().positive().max(2000).optional(),
+        search_default_mode: z.enum(['hybrid', 'keyword', 'semantic']).optional(),
+        search_hybrid_alpha: z.coerce.number().min(0).max(1).optional(),
+        search_hybrid_beta: z.coerce.number().min(0).max(1).optional(),
+        search_default_limit: z.coerce.number().int().positive().max(500).optional(),
         github_key_prefix: z.string().min(1).optional(),
         local_key_prefix: z.string().min(1).optional(),
+        enable_monorepo_resolution: z.boolean().optional(),
+        monorepo_detection_level: z.coerce.number().int().min(0).max(3).optional(),
+        monorepo_mode: monorepoModeSchema.optional(),
+        monorepo_root_markers: z.array(z.string().min(1)).optional(),
+        monorepo_workspace_globs: z.array(z.string().min(1)).optional(),
+        monorepo_exclude_globs: z.array(z.string().min(1)).optional(),
+        monorepo_max_depth: z.coerce.number().int().positive().optional(),
         reason: z.string().max(500).optional(),
       })
       .parse(req.body);
@@ -400,7 +494,7 @@ app.put('/v1/integrations', async (req, res, next) => {
     const body = z
       .object({
         workspace_key: z.string().min(1),
-        provider: z.enum(['notion', 'jira', 'confluence', 'linear', 'slack']),
+        provider: z.enum(['notion', 'jira', 'confluence', 'linear', 'slack', 'audit_reasoner']),
         enabled: z.boolean().optional(),
         config: z.record(z.unknown()).optional(),
         reason: z.string().max(500).optional(),
@@ -792,18 +886,140 @@ app.post('/v1/git-events', async (req, res, next) => {
         project_key: z.string().min(1),
         event: z.enum(['commit', 'merge', 'checkout']),
         branch: z.string().min(1).optional(),
+        from_branch: z.string().min(1).optional(),
+        to_branch: z.string().min(1).optional(),
         commit_hash: z.string().min(7).optional(),
+        message: z.string().optional(),
+        changed_files: z.array(z.string().min(1)).max(2000).optional(),
+        metadata: z.record(z.unknown()).optional(),
+      })
+      .parse(req.body);
+    const eventType =
+      body.event === 'commit'
+        ? 'post_commit'
+        : body.event === 'merge'
+          ? 'post_merge'
+          : 'post_checkout';
+    const result = await service.captureRawEvent({
+      auth: (req as AuthedRequest).auth!,
+      workspaceKey: body.workspace_key,
+      projectKey: body.project_key,
+      eventType,
+      branch: body.branch,
+      fromBranch: body.from_branch,
+      toBranch: body.to_branch,
+      commitSha: body.commit_hash,
+      commitMessage: body.message,
+      changedFiles: body.changed_files,
+      metadata: body.metadata,
+    });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/v1/raw-events', async (req, res, next) => {
+  try {
+    const body = z
+      .object({
+        workspace_key: z.string().min(1),
+        project_key: z.string().min(1),
+        event_type: z.enum(['post_commit', 'post_merge', 'post_checkout']),
+        branch: z.string().min(1).optional(),
+        from_branch: z.string().min(1).optional(),
+        to_branch: z.string().min(1).optional(),
+        commit_sha: z.string().min(7).optional(),
+        commit_message: z.string().optional(),
+        changed_files: z.array(z.string().min(1)).max(2000).optional(),
+        metadata: z.record(z.unknown()).optional(),
+      })
+      .parse(req.body);
+    const result = await service.captureRawEvent({
+      auth: (req as AuthedRequest).auth!,
+      workspaceKey: body.workspace_key,
+      projectKey: body.project_key,
+      eventType: body.event_type,
+      branch: body.branch,
+      fromBranch: body.from_branch,
+      toBranch: body.to_branch,
+      commitSha: body.commit_sha,
+      commitMessage: body.commit_message,
+      changedFiles: body.changed_files,
+      metadata: body.metadata,
+    });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/v1/raw-events', async (req, res, next) => {
+  try {
+    const query = z
+      .object({
+        workspace_key: z.string().min(1),
+        project_key: z.string().optional(),
+        event_type: z.enum(['post_commit', 'post_merge', 'post_checkout']).optional(),
+        commit_sha: z.string().optional(),
+        from: z.string().datetime().optional(),
+        to: z.string().datetime().optional(),
+        limit: z.coerce.number().int().positive().optional(),
+      })
+      .parse(req.query);
+    const result = await service.listRawEvents({
+      auth: (req as AuthedRequest).auth!,
+      workspaceKey: query.workspace_key,
+      projectKey: query.project_key,
+      eventType: query.event_type,
+      commitSha: query.commit_sha,
+      from: query.from,
+      to: query.to,
+      limit: query.limit,
+    });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/v1/ci-events', async (req, res, next) => {
+  try {
+    const body = z
+      .object({
+        workspace_key: z.string().min(1),
+        status: z.enum(['success', 'failure']),
+        provider: z.enum(['github_actions', 'generic']).default('github_actions'),
+        project_key: z.string().min(1).optional(),
+        workflow_name: z.string().min(1).optional(),
+        workflow_run_id: z.union([z.string().min(1), z.number().int().nonnegative()]).optional(),
+        workflow_run_url: z.string().url().optional(),
+        repository: z.string().min(1).optional(),
+        branch: z.string().min(1).optional(),
+        sha: z.string().min(7).optional(),
+        event_name: z.string().min(1).optional(),
+        job_name: z.string().min(1).optional(),
         message: z.string().optional(),
         metadata: z.record(z.unknown()).optional(),
       })
       .parse(req.body);
-    const result = await service.handleGitEvent({
+    const result = await service.handleCiEvent({
       auth: (req as AuthedRequest).auth!,
       workspaceKey: body.workspace_key,
+      status: body.status,
+      provider: body.provider,
       projectKey: body.project_key,
-      event: body.event,
+      workflowName: body.workflow_name,
+      workflowRunId:
+        typeof body.workflow_run_id === 'number'
+          ? String(body.workflow_run_id)
+          : body.workflow_run_id,
+      workflowRunUrl: body.workflow_run_url,
+      repository: body.repository,
       branch: body.branch,
-      commitHash: body.commit_hash,
+      sha: body.sha,
+      eventName: body.event_name,
+      jobName: body.job_name,
       message: body.message,
       metadata: body.metadata,
     });
@@ -858,6 +1074,10 @@ function toLockedIntegrationProviders(values: readonly string[]): ReadonlySet<In
     }
     if (value === 'slack') {
       providers.add(IntegrationProvider.slack);
+      continue;
+    }
+    if (value === 'audit_reasoner') {
+      providers.add(IntegrationProvider.audit_reasoner);
     }
   }
   return providers;

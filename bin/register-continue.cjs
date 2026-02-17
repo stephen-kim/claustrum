@@ -16,7 +16,7 @@ let force = false;
 let cmd = process.env.CONTEXT_SYNC_REGISTER_CMD || 'npx';
 let args = process.env.CONTEXT_SYNC_REGISTER_ARGS ? 
   process.env.CONTEXT_SYNC_REGISTER_ARGS.split(',').map(s => s.trim()).filter(Boolean) :
-  ['-y', '@context-sync/server'];
+  ['-y', '@claustrum/server'];
 let testHome = null;
 
 for (let i = 0; i < argv.length; i++) {
@@ -65,22 +65,22 @@ async function main() {
     }
   }
 
-  // Check for existing Context Sync entry
+  // Check for existing Claustrum entry
   const existingEntries = Array.isArray(configObj.mcpServers) ? configObj.mcpServers : [];
   const found = existingEntries.find(e => {
     if (!e) return false;
     if (e.name && typeof e.name === 'string' && e.name.toLowerCase().includes('context')) return true;
-    if (e.command && typeof e.command === 'string' && e.command.includes('context-sync')) return true;
+    if (e.command && typeof e.command === 'string' && e.command.includes('claustrum')) return true;
     return false;
   });
 
   if (found && !force) {
-    console.log('Context Sync already registered in global Continue config. Use --force to overwrite.');
+    console.log('Claustrum already registered in global Continue config. Use --force to overwrite.');
     return process.exit(0);
   }
 
   // Ask for consent
-  const consent = yes ? 'y' : await prompt(`This will add Context Sync to your global Continue config at:\n  ${configPath}\nDo you want to proceed? (y/N): `);
+  const consent = yes ? 'y' : await prompt(`This will add Claustrum to your global Continue config at:\n  ${configPath}\nDo you want to proceed? (y/N): `);
   if (!consent || consent.trim().toLowerCase() !== 'y') {
     console.log('Aborted by user. No changes made.');
     return process.exit(0);
@@ -88,7 +88,7 @@ async function main() {
 
   // Prepare new entry
   const newEntry = {
-    name: 'Context Sync',
+    name: 'Claustrum',
     type: 'stdio',
     command: cmd,
     args: args,
@@ -105,12 +105,12 @@ async function main() {
 
   // Merge
   if (!Array.isArray(configObj.mcpServers)) configObj.mcpServers = [];
-  // Remove existing context-sync-like entries if force
+  // Remove existing claustrum-like entries if force
   if (force) {
     configObj.mcpServers = configObj.mcpServers.filter(e => {
       if (!e) return true;
       if (e.name && typeof e.name === 'string' && e.name.toLowerCase().includes('context')) return false;
-      if (e.command && typeof e.command === 'string' && e.command.includes('context-sync')) return false;
+      if (e.command && typeof e.command === 'string' && e.command.includes('claustrum')) return false;
       return true;
     });
   }
@@ -120,7 +120,7 @@ async function main() {
   try {
     const out = yaml.dump(configObj, { noRefs: true, sortKeys: false });
     fs.writeFileSync(configPath, out, 'utf8');
-    console.log('Successfully wrote Context Sync entry to Continue global config.');
+    console.log('Successfully wrote Claustrum entry to Continue global config.');
   } catch (err) {
     console.error('Error writing config file:', err.message);
     return process.exit(1);

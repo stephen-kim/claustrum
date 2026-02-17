@@ -31,7 +31,7 @@ async function main() {
   });
 
   const client = new Client(
-    { name: 'context-sync-smoke-test', version: '1.0.0' },
+    { name: 'claustrum-smoke-test', version: '1.0.0' },
     { capabilities: {} }
   );
 
@@ -58,7 +58,7 @@ async function main() {
       `Expected recall output to contain remembered note. Output was:\n${text}`
     );
 
-    console.error('[context-sync:test] smoke test passed');
+    console.error('[claustrum:test] smoke test passed');
   } finally {
     await client.close();
   }
@@ -89,6 +89,6 @@ function extractText(result) {
 }
 
 main().catch((error) => {
-  console.error('[context-sync:test] failed:', error);
+  console.error('[claustrum:test] failed:', error);
   process.exit(1);
 });

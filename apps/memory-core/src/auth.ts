@@ -1,5 +1,5 @@
 import type { PrismaClient } from '@prisma/client';
-import type { AuthenticatedUser } from '@context-sync/shared';
+import type { AuthenticatedUser } from '@claustrum/shared';
 
 export type AuthContext = {
   user: AuthenticatedUser;

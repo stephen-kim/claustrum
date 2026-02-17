@@ -336,13 +336,13 @@ class PlatformAutoConfigurator {
       const structure = configInfo.workspaceStructure || this.buildServerDefinition(configInfo);
 
       // Determine file name - use a simple, standard name
-      const fileName = 'context-sync.yaml';
+      const fileName = 'claustrum.yaml';
       const filePath = path.join(targetDir, fileName);
 
       // Check if already configured
       if (fs.existsSync(filePath)) {
         const existing = fs.readFileSync(filePath, 'utf8');
-        if (existing.includes('Context Sync') || existing.includes('context-sync') || existing.includes('@context-sync/server')) {
+        if (existing.includes('Claustrum') || existing.includes('claustrum') || existing.includes('@claustrum/server')) {
           if (this.verbose) console.log(`     Already configured in workspace`);
           return { success: false, reason: 'Already configured' };
         }
@@ -370,7 +370,7 @@ class PlatformAutoConfigurator {
 
   /**
    * Configure Continue.dev global config (~/.continue/config.yaml)
-   * This adds Context Sync to the global mcpServers array
+   * This adds Claustrum to the global mcpServers array
    */
   async configureContinueGlobal(configInfo, platformId) {
     const globalPath = configInfo.globalPath && configInfo.globalPath[this.platform];
@@ -409,8 +409,8 @@ class PlatformAutoConfigurator {
       const found = existingServers.find(s => {
         if (!s) return false;
         if (s.name && typeof s.name === 'string' && s.name.toLowerCase().includes('context')) return true;
-        if (s.command && typeof s.command === 'string' && (s.command.includes('context-sync') || 
-            (Array.isArray(s.args) && s.args.some(arg => typeof arg === 'string' && arg.includes('context-sync'))))) {
+        if (s.command && typeof s.command === 'string' && (s.command.includes('claustrum') || 
+            (Array.isArray(s.args) && s.args.some(arg => typeof arg === 'string' && arg.includes('claustrum'))))) {
           return true;
         }
         return false;
@@ -515,7 +515,7 @@ class PlatformAutoConfigurator {
    */
   buildServerDefinition(configInfo) {
     const base = {
-      name: 'Context Sync',
+      name: 'Claustrum',
       command: 'node',
       args: ['{{packagePath}}']
     };
@@ -533,7 +533,7 @@ class PlatformAutoConfigurator {
     }
 
     const adapter = configInfo.adapter;
-    const serverId = adapter.serverId || 'context-sync';
+    const serverId = adapter.serverId || 'claustrum';
     const serverDef = this.buildServerDefinition(configInfo);
     const payload = adapter.rootExtras ? JSON.parse(JSON.stringify(adapter.rootExtras)) : {};
     const serverPayload = { [serverId]: serverDef };
@@ -586,7 +586,7 @@ class PlatformAutoConfigurator {
 
     const configPath = configInfo.paths[this.platform];
     const configDir = path.dirname(configPath);
-    const tableKey = configInfo.tomlTableKey || 'mcp_servers.context-sync';
+    const tableKey = configInfo.tomlTableKey || 'mcp_servers.claustrum';
 
     try {
       if (!fs.existsSync(configDir)) {
@@ -640,12 +640,12 @@ class PlatformAutoConfigurator {
   }
 
   /**
-   * Check if context-sync is already configured
+   * Check if claustrum is already configured
    */
   findContextSyncConfig(config) {
     const search = (obj, path = '') => {
       for (const key in obj) {
-        if (key === 'context-sync') {
+        if (key === 'claustrum') {
           return `${path}.${key}`;
         }
         if (typeof obj[key] === 'object' && obj[key] !== null) {
@@ -703,11 +703,11 @@ class PlatformAutoConfigurator {
     report += ` Next Steps:\n`;
     if (configured.length > 0) {
       report += `   1. Restart your AI applications\n`;
-      report += `   2. Context Sync should appear in their MCP/tools list\n`;
-      report += `   3. Try: "help context-sync" in any configured platform\n\n`;
+      report += `   2. Claustrum should appear in their MCP/tools list\n`;
+      report += `   3. Try: "help claustrum" in any configured platform\n\n`;
     } else {
       report += `   1. Install an AI platform that supports MCP\n`;
-      report += `   2. Run: npm install -g @context-sync/server\n`;
+      report += `   2. Run: npm install -g @claustrum/server\n`;
       report += `   3. Auto-configuration will run again\n\n`;
     }
 

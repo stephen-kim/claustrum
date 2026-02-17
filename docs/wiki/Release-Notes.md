@@ -43,6 +43,9 @@
 - Added `project_key` override for `remember`/`recall`.
 - Added controlled raw search (snippet-only, max chars, audit logs).
 - Added Docker assets and external DB support.
+- Added `audit_reasoner` integration for asynchronous AI-generated audit reasons.
+  - Provider: OpenAI or Gemini
+  - Priority: `ENV > Admin UI` workspace setting
 
 
 ### MCP Compatibility

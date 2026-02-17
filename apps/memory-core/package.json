@@ -1,5 +1,5 @@
 {
-  "name": "@context-sync/memory-core",
+  "name": "@claustrum/memory-core",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -16,7 +16,7 @@
     "test:mock": "node scripts/rest-mock-scenarios-test.mjs"
   },
   "dependencies": {
-    "@context-sync/shared": "workspace:*",
+    "@claustrum/shared": "workspace:*",
     "@notionhq/client": "^5.4.0",
     "@prisma/client": "^5.22.0",
     "cors": "^2.8.5",

@@ -208,6 +208,39 @@ async function runMockScenarios() {
   });
   assert.equal(githubResolved.resolution, 'github_remote');
   assert.equal(githubResolved.created, true);
+  assert.equal(githubResolved.project.key, `github:acme/repo-${suffix}`);
+
+  await callApi('/v1/workspace-settings', {
+    method: 'PUT',
+    body: JSON.stringify({
+      workspace_key: workspaceKey,
+      resolution_order: ['github_remote', 'repo_root_slug', 'manual'],
+      auto_create_project: true,
+      auto_create_project_subprojects: true,
+      github_key_prefix: 'github:',
+      local_key_prefix: 'local:',
+      enable_monorepo_resolution: true,
+      monorepo_mode: 'repo_hash_subpath',
+      monorepo_workspace_globs: ['apps/*', 'packages/*'],
+      monorepo_max_depth: 3,
+    }),
+  });
+
+  const githubMonorepoResolved = await callApi('/v1/resolve-project', {
+    method: 'POST',
+    body: JSON.stringify({
+      workspace_key: workspaceKey,
+      github_remote: {
+        normalized: `acme/repo-${suffix}`,
+      },
+      relative_path: 'apps/service/src',
+      monorepo: {
+        enabled: true,
+        candidate_subpaths: ['apps/service'],
+      },
+    }),
+  });
+  assert.equal(githubMonorepoResolved.project.key, `github:acme/repo-${suffix}#apps/service`);
 
   const repoResolved = await callApi('/v1/resolve-project', {
     method: 'POST',
@@ -247,6 +280,25 @@ async function runMockScenarios() {
     }),
   });
   assert.equal(missingResolve.status, 404);
+
+  const ciEvent = await callApi('/v1/ci-events', {
+    method: 'POST',
+    body: JSON.stringify({
+      workspace_key: workspaceKey,
+      project_key: alphaProjectKey,
+      status: 'success',
+      provider: 'github_actions',
+      workflow_name: 'mock-ci',
+      workflow_run_id: suffix,
+      repository: `acme/repo-${suffix}`,
+      branch: 'main',
+      sha: `${suffix}abcdef0`,
+      event_name: 'push',
+      job_name: 'mock-job',
+      metadata: { source: 'mock-scenarios-test' },
+    }),
+  });
+  assert.equal(ciEvent.action, 'ci.success');
 
   const codexJsonl = [
     JSON.stringify({

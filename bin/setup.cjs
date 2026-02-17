@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 /**
- * Context Sync Setup CLI
- * Interactive configuration for Context Sync and integrations
+ * Claustrum Setup CLI
+ * Interactive configuration for Claustrum and integrations
  */
 
 const readlineSync = require('readline-sync');
@@ -12,7 +12,7 @@ const os = require('os');
 const { exec } = require('child_process');
 const PLATFORM_CONFIGS = require('./platform-configs.cjs');
 
-const CONFIG_DIR = path.join(os.homedir(), '.context-sync');
+const CONFIG_DIR = path.join(os.homedir(), '.claustrum');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 const STATUS_FILE = path.join(CONFIG_DIR, 'install-status.json');
 
@@ -100,7 +100,7 @@ function showAutoConfigSummary(status) {
   if (!status || !status.results) {
     log(colors.gray, 'No auto-configuration status found.');
     log(colors.gray, 'Install globally to auto-configure platforms:');
-    log(colors.white, '  npm install -g @context-sync/server\n');
+    log(colors.white, '  npm install -g @claustrum/server\n');
     return;
   }
 
@@ -148,7 +148,7 @@ function showAutoConfigSummary(status) {
 
   log(
     colors.gray,
-    '\nFor manual setup steps, see the project Wiki: https://github.com/stephen-kim/context-sync/wiki\n'
+    '\nFor manual setup steps, see the project Wiki: https://github.com/stephen-kim/claustrum/wiki\n'
   );
 }
 
@@ -198,7 +198,7 @@ function saveConfig(config) {
  */
 async function setupNotionIntegration(config) {
   printHeader('Notion Integration Setup');
-  log(colors.white, 'This wizard configures Notion for Context Sync.\n');
+  log(colors.white, 'This wizard configures Notion for Claustrum.\n');
 
   if (config.notion && config.notion.token) {
     log(colors.green, 'OK Notion is already configured.');
@@ -212,7 +212,7 @@ async function setupNotionIntegration(config) {
   log(colors.yellow, '\nStep 1 of 3: Create a Notion integration');
   log(colors.gray, '  1. Visit: https://www.notion.so/my-integrations');
   log(colors.gray, '  2. Click "New integration"');
-  log(colors.gray, '  3. Give it a name (e.g., "Context Sync")');
+  log(colors.gray, '  3. Give it a name (e.g., "Claustrum")');
   log(colors.gray, '  4. Select your workspace');
   log(colors.gray, '  5. Copy the "Internal Integration Token"\n');
 
@@ -338,7 +338,7 @@ async function setupNotionIntegration(config) {
 
   if (saveConfig(config)) {
     log(colors.green + colors.bold, '\nOK Notion integration configured successfully!\n');
-    log(colors.cyan, 'You can now use Notion tools in Context Sync:');
+    log(colors.cyan, 'You can now use Notion tools in Claustrum:');
     log(colors.white, '  - notion.search - Search your Notion workspace');
     log(colors.white, '  - notion.read - Read Notion page content\n');
   }
@@ -349,7 +349,7 @@ async function setupNotionIntegration(config) {
  */
 async function main() {
   console.log('\n╔═══════════════════════════════════════╗');
-  console.log('║    Context Sync Setup Wizard      ║');
+  console.log('║    Claustrum Setup Wizard      ║');
   console.log('╚═══════════════════════════════════════╝\n');
 
   // Load existing config
@@ -359,7 +359,7 @@ async function main() {
   const installStatus = loadInstallStatus();
   showAutoConfigSummary(installStatus);
 
-  log(colors.white, 'Welcome to Context Sync!\n');
+  log(colors.white, 'Welcome to Claustrum!\n');
   log(colors.gray, 'This wizard configures Notion only.\n');
 
   // Setup Notion
@@ -376,9 +376,9 @@ async function main() {
   saveConfig(config);
 
   log(colors.green + colors.bold, '\nOK Setup complete!\n');
-  log(colors.cyan, 'Context Sync is ready to use with your AI assistant.');
+  log(colors.cyan, 'Claustrum is ready to use with your AI assistant.');
   log(colors.gray, '\nYou can run this setup again anytime with:');
-  log(colors.white, '  context-sync-setup\n');
+  log(colors.white, '  claustrum-setup\n');
 }
 
 // Run setup

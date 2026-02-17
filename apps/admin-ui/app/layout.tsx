@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Context Sync Admin',
+  title: 'Claustrum Admin',
   description: 'Memory Core admin dashboard',
 };
 
@@ -12,8 +12,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="en" className="dark">
+      <body className="bg-background text-foreground">{children}</body>
     </html>
   );
 }

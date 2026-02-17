@@ -38,13 +38,64 @@ Configured at workspace level:
 - `project_mappings`
 
 
+## Auto Switch Flow
+
+`ensureContext()` runs before `remember`, `recall`, and `search_raw`.
+
+```mermaid
+flowchart TD
+  A["Tool call (remember/recall/search_raw)"] --> B["Load workspace settings"]
+  B --> C["Detect git context (repo + cwd)"]
+  C --> D["Resolve repo_key"]
+  D --> E{"pin_mode == true?"}
+  E -- Yes --> F["Keep current_project_key"]
+  E -- No --> G{"Repo changed?"}
+  G -- Yes --> H{"auto_switch_repo?"}
+  H -- Yes --> I["Switch to new repo project"]
+  H -- No --> F
+  G -- No --> J{"Subproject changed?"}
+  J -- Yes --> K{"auto_switch_subproject?"}
+  K -- Yes --> L["Switch to repo#subpath"]
+  K -- No --> F
+  J -- No --> F
+  I --> M["Update session state + stderr log"]
+  L --> M
+  F --> N["Execute tool"]
+  M --> N
+```
+
+Defaults:
+- `auto_switch_repo=true`
+- `auto_switch_subproject=false`
+- `enable_monorepo_resolution=false`
+- `monorepo_detection_level=2`
+
+## CI Failure/Success Audit
+
+- Endpoint: `POST /v1/ci-events`
+- Action emitted:
+  - success -> `ci.success`
+  - failure -> `ci.failure`
+- Slack forwarding:
+  - include `ci.` in Slack `action_prefixes`
+  - `status=failure` is automatically treated as high severity
+- GitHub Actions example:
+  - `.github/workflows/claustrum-ci-events.yml`
+  - set repository secrets:
+    - `MEMORY_CORE_URL`
+    - `MEMORY_CORE_API_KEY`
+    - `MEMORY_CORE_WORKSPACE_KEY`
+    - optional `MEMORY_CORE_PROJECT_KEY`
+
+
 ## Admin UI Checklist
 
 - Manage workspace/project/member
 - Manage resolution settings and mappings
+- Send CI success/failure events from the CI Events panel
 - Run imports and commit staged memories
 - Execute raw snippet search
-- Review audit logs (`raw.search`, `raw.view`)
+- Review audit logs (`ci.failure`, `ci.success`, `raw.search`, `raw.view`)
 
 
 ## Useful Commands

@@ -34,6 +34,25 @@ export type ResolveResponse = {
   created?: boolean;
 };
 
+export type WorkspaceSettingsResponse = {
+  workspace_key: string;
+  auto_switch_repo: boolean;
+  auto_switch_subproject: boolean;
+  allow_manual_pin: boolean;
+  enable_git_events: boolean;
+  enable_commit_events: boolean;
+  enable_merge_events: boolean;
+  enable_checkout_events: boolean;
+  checkout_debounce_seconds: number;
+  checkout_daily_limit: number;
+  enable_monorepo_resolution: boolean;
+  monorepo_detection_level: number;
+  monorepo_workspace_globs: string[];
+  monorepo_exclude_globs: string[];
+  monorepo_root_markers: string[];
+  monorepo_max_depth: number;
+};
+
 export type RawSearchMatch = {
   raw_session_id: string;
   source: string;

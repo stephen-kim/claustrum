@@ -14,13 +14,29 @@ export const tools: Tool[] = [
   },
   {
     name: 'set_project',
-    description: 'Manually choose a project key (manual resolver input)',
+    description: 'Manually choose and pin a project key (disables auto-switch until unpinned)',
     inputSchema: {
       type: 'object',
       properties: {
         key: { type: 'string' },
       },
       required: ['key'],
+    },
+  },
+  {
+    name: 'unset_project_pin',
+    description: 'Disable pin mode and resume automatic project switching',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'get_current_project',
+    description: 'Show current resolved project and pin mode state',
+    inputSchema: {
+      type: 'object',
+      properties: {},
     },
   },
   {
@@ -52,6 +68,7 @@ export const tools: Tool[] = [
         },
         limit: { type: 'number' },
         since: { type: 'string' },
+        mode: { type: 'string', enum: ['hybrid', 'keyword', 'semantic'] },
         project_key: { type: 'string' },
       },
     },

@@ -49,9 +49,9 @@ Upsert 의미:
 - `docker-compose.dev.yml`: 소스 빌드 기반 로컬 개발
 - 이미지 override 변수(선택): `MEMORY_CORE_IMAGE`, `MCP_ADAPTER_IMAGE`, `ADMIN_UI_IMAGE`
 - 기본 이미지:
-  - `ghcr.io/stephen-kim/context-sync-memory-core:latest`
-  - `ghcr.io/stephen-kim/context-sync-mcp-adapter:latest`
-  - `ghcr.io/stephen-kim/context-sync-admin-ui:latest`
+  - `ghcr.io/stephen-kim/claustrum-memory-core:latest`
+  - `ghcr.io/stephen-kim/claustrum-mcp-adapter:latest`
+  - `ghcr.io/stephen-kim/claustrum-admin-ui:latest`
 
 
 ## 로컬 개발 (소스 빌드 컨테이너)
@@ -113,7 +113,7 @@ docker compose up -d
 ```toml
 [mcp_servers.memory-core]
 command = "pnpm"
-args = ["--filter", "@context-sync/mcp-adapter", "start"]
+args = ["--filter", "@claustrum/mcp-adapter", "start"]
 
 [mcp_servers.memory-core.env]
 MEMORY_CORE_URL = "http://127.0.0.1:8080"

@@ -73,7 +73,7 @@ if [[ -z "${WIKI_URL}" ]]; then
   fi
 fi
 
-TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/context-sync-wiki.XXXXXX")"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/claustrum-wiki.XXXXXX")"
 
 cleanup() {
   if [[ ${KEEP_TEMP} -eq 0 ]]; then

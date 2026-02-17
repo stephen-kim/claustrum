@@ -1,20 +1,33 @@
 'use client';
 
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { AdminSessionSidebar } from './components/admin-session-sidebar';
+import { AuditLogsPanel } from './components/audit-logs-panel';
+import { CiEventsPanel } from './components/ci-events-panel';
 import { IntegrationsPanel } from './components/integrations-panel';
+import { ImportsPanel } from './components/imports-panel';
+import { MemoriesPanel } from './components/memories-panel';
+import { ProjectMappingsPanel } from './components/project-mappings-panel';
+import { ProjectMembersPanel } from './components/project-members-panel';
+import { ProjectsPanel } from './components/projects-panel';
+import { RawEventsPanel } from './components/raw-events-panel';
+import { RawSearchPanel } from './components/raw-search-panel';
+import { ResolutionSettingsPanel } from './components/resolution-settings-panel';
 import {
-  MEMORY_TYPES,
   RESOLUTION_KINDS,
   type AuditLogItem,
   type ImportItem,
   type ImportSource,
   type IntegrationProvider,
+  type MonorepoMode,
   type IntegrationSettingsResponse,
   type MemoryItem,
   type Project,
   type ProjectMapping,
   type ProjectMember,
   type RawMessageDetail,
+  type RawEventItem,
+  type RawEventType,
   type RawSearchMatch,
   type ResolutionKind,
   type StagedMemoryItem,
@@ -22,9 +35,16 @@ import {
   type Workspace,
   type WorkspaceSettings,
 } from './lib/types';
-import { kindDescription, reorderKinds, toISOString } from './lib/utils';
+import { isSubprojectKey, toISOString } from './lib/utils';
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_MEMORY_CORE_URL || '').trim();
+
+function parseLineSeparatedValues(input: string): string[] {
+  return input
+    .split(/\r?\n|,/g)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
 export default function Page() {
   const [apiKeyInput, setApiKeyInput] = useState('');
@@ -43,6 +63,7 @@ export default function Page() {
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState('');
+  const [projectViewFilter, setProjectViewFilter] = useState<'all' | 'repo_only' | 'subprojects_only'>('all');
   const [newProjectKey, setNewProjectKey] = useState('');
   const [newProjectName, setNewProjectName] = useState('');
 
@@ -52,11 +73,17 @@ export default function Page() {
 
   const [queryText, setQueryText] = useState('');
   const [queryType, setQueryType] = useState('');
+  const [queryMode, setQueryMode] = useState<'hybrid' | 'keyword' | 'semantic'>('hybrid');
+  const [queryStatus, setQueryStatus] = useState<'' | 'draft' | 'confirmed' | 'rejected'>('');
+  const [querySource, setQuerySource] = useState<'' | 'auto' | 'human' | 'import'>('');
+  const [queryConfidenceMin, setQueryConfidenceMin] = useState('');
+  const [queryConfidenceMax, setQueryConfidenceMax] = useState('');
   const [querySince, setQuerySince] = useState('');
   const [queryLimit, setQueryLimit] = useState(50);
   const [scopeSelectedProject, setScopeSelectedProject] = useState(true);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [selectedMemoryId, setSelectedMemoryId] = useState('');
+  const [selectedMemoryDraftContent, setSelectedMemoryDraftContent] = useState('');
 
   const [newMemoryType, setNewMemoryType] = useState('note');
   const [newMemoryContent, setNewMemoryContent] = useState('');
@@ -64,8 +91,50 @@ export default function Page() {
 
   const [resolutionOrder, setResolutionOrder] = useState<ResolutionKind[]>(RESOLUTION_KINDS);
   const [autoCreateProject, setAutoCreateProject] = useState(true);
+  const [autoCreateProjectSubprojects, setAutoCreateProjectSubprojects] = useState(true);
+  const [autoSwitchRepo, setAutoSwitchRepo] = useState(true);
+  const [autoSwitchSubproject, setAutoSwitchSubproject] = useState(false);
+  const [allowManualPin, setAllowManualPin] = useState(true);
+  const [enableGitEvents, setEnableGitEvents] = useState(true);
+  const [enableCommitEvents, setEnableCommitEvents] = useState(true);
+  const [enableMergeEvents, setEnableMergeEvents] = useState(true);
+  const [enableCheckoutEvents, setEnableCheckoutEvents] = useState(false);
+  const [checkoutDebounceSeconds, setCheckoutDebounceSeconds] = useState(30);
+  const [checkoutDailyLimit, setCheckoutDailyLimit] = useState(200);
+  const [enableAutoExtraction, setEnableAutoExtraction] = useState(true);
+  const [autoExtractionMode, setAutoExtractionMode] = useState<'draft_only' | 'auto_confirm'>(
+    'draft_only'
+  );
+  const [autoConfirmMinConfidence, setAutoConfirmMinConfidence] = useState(0.85);
+  const [autoConfirmAllowedEventTypesText, setAutoConfirmAllowedEventTypesText] = useState(
+    'post_commit\npost_merge'
+  );
+  const [autoConfirmKeywordAllowlistText, setAutoConfirmKeywordAllowlistText] = useState(
+    'migrate\nswitch\nremove\ndeprecate\nrename\nrefactor'
+  );
+  const [autoConfirmKeywordDenylistText, setAutoConfirmKeywordDenylistText] = useState(
+    'wip\ntmp\ndebug\ntest\ntry'
+  );
+  const [autoExtractionBatchSize, setAutoExtractionBatchSize] = useState(20);
+  const [searchDefaultMode, setSearchDefaultMode] = useState<'hybrid' | 'keyword' | 'semantic'>(
+    'hybrid'
+  );
+  const [searchHybridAlpha, setSearchHybridAlpha] = useState(0.6);
+  const [searchHybridBeta, setSearchHybridBeta] = useState(0.4);
+  const [searchDefaultLimit, setSearchDefaultLimit] = useState(20);
   const [githubPrefix, setGithubPrefix] = useState('github:');
   const [localPrefix, setLocalPrefix] = useState('local:');
+  const [enableMonorepoResolution, setEnableMonorepoResolution] = useState(false);
+  const [monorepoDetectionLevel, setMonorepoDetectionLevel] = useState(2);
+  const [monorepoMode, setMonorepoMode] = useState<MonorepoMode>('repo_hash_subpath');
+  const [monorepoWorkspaceGlobsText, setMonorepoWorkspaceGlobsText] = useState('apps/*\npackages/*');
+  const [monorepoExcludeGlobsText, setMonorepoExcludeGlobsText] = useState(
+    '**/node_modules/**\n**/.git/**\n**/dist/**\n**/build/**\n.next/**'
+  );
+  const [monorepoRootMarkersText, setMonorepoRootMarkersText] = useState(
+    'pnpm-workspace.yaml\nturbo.json\nnx.json\nlerna.json'
+  );
+  const [monorepoMaxDepth, setMonorepoMaxDepth] = useState(3);
   const [workspaceSettingsReason, setWorkspaceSettingsReason] = useState('');
   const [draggingKind, setDraggingKind] = useState<ResolutionKind | null>(null);
 
@@ -91,8 +160,29 @@ export default function Page() {
   const [rawMatches, setRawMatches] = useState<RawSearchMatch[]>([]);
   const [selectedRawMessageId, setSelectedRawMessageId] = useState('');
   const [rawMessageDetail, setRawMessageDetail] = useState<RawMessageDetail | null>(null);
+  const [rawEventProjectFilter, setRawEventProjectFilter] = useState('');
+  const [rawEventTypeFilter, setRawEventTypeFilter] = useState<'' | RawEventType>('');
+  const [rawEventCommitShaFilter, setRawEventCommitShaFilter] = useState('');
+  const [rawEventFrom, setRawEventFrom] = useState('');
+  const [rawEventTo, setRawEventTo] = useState('');
+  const [rawEventLimit, setRawEventLimit] = useState(100);
+  const [rawEvents, setRawEvents] = useState<RawEventItem[]>([]);
 
-  const [auditActionPrefix, setAuditActionPrefix] = useState('raw.');
+  const [ciStatus, setCiStatus] = useState<'success' | 'failure'>('failure');
+  const [ciProvider, setCiProvider] = useState<'github_actions' | 'generic'>('github_actions');
+  const [ciUseSelectedProject, setCiUseSelectedProject] = useState(true);
+  const [ciWorkflowName, setCiWorkflowName] = useState('CI');
+  const [ciWorkflowRunId, setCiWorkflowRunId] = useState('');
+  const [ciWorkflowRunUrl, setCiWorkflowRunUrl] = useState('');
+  const [ciRepository, setCiRepository] = useState('');
+  const [ciBranch, setCiBranch] = useState('');
+  const [ciSha, setCiSha] = useState('');
+  const [ciEventName, setCiEventName] = useState('push');
+  const [ciJobName, setCiJobName] = useState('');
+  const [ciMessage, setCiMessage] = useState('');
+  const [ciMetadata, setCiMetadata] = useState('{"source":"admin-ui"}');
+
+  const [auditActionPrefix, setAuditActionPrefix] = useState('ci.');
   const [auditLimit, setAuditLimit] = useState(50);
   const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
   const [integrationStates, setIntegrationStates] = useState<IntegrationSettingsResponse['integrations']>({
@@ -101,6 +191,16 @@ export default function Page() {
     confluence: { enabled: false, configured: false, source: 'none', has_api_token: false },
     linear: { enabled: false, configured: false, source: 'none', has_api_key: false },
     slack: { enabled: false, configured: false, source: 'none', has_webhook: false, format: 'detailed' },
+    audit_reasoner: {
+      enabled: false,
+      configured: false,
+      source: 'none',
+      has_api_key: false,
+      provider_order: ['openai', 'claude', 'gemini'],
+      has_openai_api_key: false,
+      has_claude_api_key: false,
+      has_gemini_api_key: false,
+    },
   });
   const [notionEnabled, setNotionEnabled] = useState(false);
   const [notionToken, setNotionToken] = useState('');
@@ -128,12 +228,25 @@ export default function Page() {
   const [slackEnabled, setSlackEnabled] = useState(false);
   const [slackWebhookUrl, setSlackWebhookUrl] = useState('');
   const [slackDefaultChannel, setSlackDefaultChannel] = useState('');
-  const [slackActionPrefixes, setSlackActionPrefixes] = useState('workspace_settings.,project_mapping.,integration.,git.');
+  const [slackActionPrefixes, setSlackActionPrefixes] = useState(
+    'workspace_settings.,project_mapping.,integration.,git.,ci.'
+  );
   const [slackFormat, setSlackFormat] = useState<'compact' | 'detailed'>('detailed');
   const [slackIncludeTargetJson, setSlackIncludeTargetJson] = useState(true);
   const [slackMaskSecrets, setSlackMaskSecrets] = useState(true);
   const [slackRoutesJson, setSlackRoutesJson] = useState('[]');
   const [slackSeverityRulesJson, setSlackSeverityRulesJson] = useState('[]');
+  const [auditReasonerEnabled, setAuditReasonerEnabled] = useState(false);
+  const [auditReasonerOrderCsv, setAuditReasonerOrderCsv] = useState('openai,claude,gemini');
+  const [auditReasonerOpenAiModel, setAuditReasonerOpenAiModel] = useState('');
+  const [auditReasonerOpenAiBaseUrl, setAuditReasonerOpenAiBaseUrl] = useState('');
+  const [auditReasonerOpenAiApiKey, setAuditReasonerOpenAiApiKey] = useState('');
+  const [auditReasonerClaudeModel, setAuditReasonerClaudeModel] = useState('');
+  const [auditReasonerClaudeBaseUrl, setAuditReasonerClaudeBaseUrl] = useState('');
+  const [auditReasonerClaudeApiKey, setAuditReasonerClaudeApiKey] = useState('');
+  const [auditReasonerGeminiModel, setAuditReasonerGeminiModel] = useState('');
+  const [auditReasonerGeminiBaseUrl, setAuditReasonerGeminiBaseUrl] = useState('');
+  const [auditReasonerGeminiApiKey, setAuditReasonerGeminiApiKey] = useState('');
   const [integrationReason, setIntegrationReason] = useState('');
   const missingCoreUrl = !API_BASE_URL;
 
@@ -153,11 +266,24 @@ export default function Page() {
     () => imports.find((item) => item.id === selectedImportId) || null,
     [imports, selectedImportId]
   );
+  useEffect(() => {
+    setSelectedMemoryDraftContent(selectedMemory?.content || '');
+  }, [selectedMemory]);
+  const filteredProjects = useMemo(() => {
+    if (projectViewFilter === 'repo_only') {
+      return projects.filter((project) => !isSubprojectKey(project.key));
+    }
+    if (projectViewFilter === 'subprojects_only') {
+      return projects.filter((project) => isSubprojectKey(project.key));
+    }
+    return projects;
+  }, [projectViewFilter, projects]);
   const notionLocked = integrationStates.notion.locked === true;
   const jiraLocked = integrationStates.jira.locked === true;
   const confluenceLocked = integrationStates.confluence.locked === true;
   const linearLocked = integrationStates.linear.locked === true;
   const slackLocked = integrationStates.slack.locked === true;
+  const auditReasonerLocked = integrationStates.audit_reasoner.locked === true;
 
   useEffect(() => {
     if (!apiKey || missingCoreUrl) {
@@ -179,6 +305,7 @@ export default function Page() {
       setSelectedStagedIds([]);
       setRawMatches([]);
       setRawMessageDetail(null);
+      setRawEvents([]);
       setAuditLogs([]);
       setIntegrationStates({
         notion: { enabled: false, configured: false, source: 'none', has_token: false, write_enabled: false },
@@ -186,6 +313,16 @@ export default function Page() {
         confluence: { enabled: false, configured: false, source: 'none', has_api_token: false },
         linear: { enabled: false, configured: false, source: 'none', has_api_key: false },
         slack: { enabled: false, configured: false, source: 'none', has_webhook: false, format: 'detailed' },
+        audit_reasoner: {
+          enabled: false,
+          configured: false,
+          source: 'none',
+          has_api_key: false,
+          provider_order: ['openai', 'claude', 'gemini'],
+          has_openai_api_key: false,
+          has_claude_api_key: false,
+          has_gemini_api_key: false,
+        },
       });
       setNotionEnabled(false);
       setNotionToken('');
@@ -213,12 +350,57 @@ export default function Page() {
       setSlackEnabled(false);
       setSlackWebhookUrl('');
       setSlackDefaultChannel('');
-      setSlackActionPrefixes('workspace_settings.,project_mapping.,integration.,git.');
+      setSlackActionPrefixes('workspace_settings.,project_mapping.,integration.,git.,ci.');
       setSlackFormat('detailed');
       setSlackIncludeTargetJson(true);
       setSlackMaskSecrets(true);
       setSlackRoutesJson('[]');
       setSlackSeverityRulesJson('[]');
+      setAuditReasonerEnabled(false);
+      setAuditReasonerOrderCsv('openai,claude,gemini');
+      setAuditReasonerOpenAiModel('');
+      setAuditReasonerOpenAiBaseUrl('');
+      setAuditReasonerOpenAiApiKey('');
+      setAuditReasonerClaudeModel('');
+      setAuditReasonerClaudeBaseUrl('');
+      setAuditReasonerClaudeApiKey('');
+      setAuditReasonerGeminiModel('');
+      setAuditReasonerGeminiBaseUrl('');
+      setAuditReasonerGeminiApiKey('');
+      setResolutionOrder(RESOLUTION_KINDS);
+      setAutoCreateProject(true);
+      setAutoCreateProjectSubprojects(true);
+      setAutoSwitchRepo(true);
+      setAutoSwitchSubproject(false);
+      setAllowManualPin(true);
+      setEnableGitEvents(true);
+      setEnableCommitEvents(true);
+      setEnableMergeEvents(true);
+      setEnableCheckoutEvents(false);
+      setCheckoutDebounceSeconds(30);
+      setCheckoutDailyLimit(200);
+      setEnableAutoExtraction(true);
+      setAutoExtractionMode('draft_only');
+      setAutoConfirmMinConfidence(0.85);
+      setAutoConfirmAllowedEventTypesText('post_commit\npost_merge');
+      setAutoConfirmKeywordAllowlistText('migrate\nswitch\nremove\ndeprecate\nrename\nrefactor');
+      setAutoConfirmKeywordDenylistText('wip\ntmp\ndebug\ntest\ntry');
+      setAutoExtractionBatchSize(20);
+      setSearchDefaultMode('hybrid');
+      setSearchHybridAlpha(0.6);
+      setSearchHybridBeta(0.4);
+      setSearchDefaultLimit(20);
+      setGithubPrefix('github:');
+      setLocalPrefix('local:');
+      setEnableMonorepoResolution(false);
+      setMonorepoDetectionLevel(2);
+      setMonorepoMode('repo_hash_subpath');
+      setMonorepoWorkspaceGlobsText('apps/*\npackages/*');
+      setMonorepoExcludeGlobsText(
+        '**/node_modules/**\n**/.git/**\n**/dist/**\n**/build/**\n.next/**'
+      );
+      setMonorepoRootMarkersText('pnpm-workspace.yaml\nturbo.json\nnx.json\nlerna.json');
+      setMonorepoMaxDepth(3);
       return;
     }
     void Promise.all([
@@ -226,6 +408,7 @@ export default function Page() {
       loadWorkspaceSettings(selectedWorkspace),
       loadProjectMappings(selectedWorkspace),
       loadImports(selectedWorkspace),
+      loadRawEvents(),
       loadAuditLogs(selectedWorkspace),
       loadIntegrations(selectedWorkspace),
     ]).catch(() => {});
@@ -294,8 +477,50 @@ export default function Page() {
     const settings = await callApi<WorkspaceSettings>(`/v1/workspace-settings?${query.toString()}`);
     setResolutionOrder(settings.resolution_order);
     setAutoCreateProject(settings.auto_create_project);
+    setAutoCreateProjectSubprojects(settings.auto_create_project_subprojects);
+    setAutoSwitchRepo(settings.auto_switch_repo ?? true);
+    setAutoSwitchSubproject(settings.auto_switch_subproject ?? false);
+    setAllowManualPin(settings.allow_manual_pin ?? true);
+    setEnableGitEvents(settings.enable_git_events ?? true);
+    setEnableCommitEvents(settings.enable_commit_events ?? true);
+    setEnableMergeEvents(settings.enable_merge_events ?? true);
+    setEnableCheckoutEvents(settings.enable_checkout_events ?? false);
+    setCheckoutDebounceSeconds(settings.checkout_debounce_seconds ?? 30);
+    setCheckoutDailyLimit(settings.checkout_daily_limit ?? 200);
+    setEnableAutoExtraction(settings.enable_auto_extraction ?? true);
+    setAutoExtractionMode(settings.auto_extraction_mode ?? 'draft_only');
+    setAutoConfirmMinConfidence(settings.auto_confirm_min_confidence ?? 0.85);
+    setAutoConfirmAllowedEventTypesText(
+      (settings.auto_confirm_allowed_event_types || ['post_commit', 'post_merge']).join('\n')
+    );
+    setAutoConfirmKeywordAllowlistText(
+      (settings.auto_confirm_keyword_allowlist || [
+        'migrate',
+        'switch',
+        'remove',
+        'deprecate',
+        'rename',
+        'refactor',
+      ]).join('\n')
+    );
+    setAutoConfirmKeywordDenylistText(
+      (settings.auto_confirm_keyword_denylist || ['wip', 'tmp', 'debug', 'test', 'try']).join('\n')
+    );
+    setAutoExtractionBatchSize(settings.auto_extraction_batch_size ?? 20);
+    setSearchDefaultMode(settings.search_default_mode ?? 'hybrid');
+    setQueryMode(settings.search_default_mode ?? 'hybrid');
+    setSearchHybridAlpha(settings.search_hybrid_alpha ?? 0.6);
+    setSearchHybridBeta(settings.search_hybrid_beta ?? 0.4);
+    setSearchDefaultLimit(settings.search_default_limit ?? 20);
     setGithubPrefix(settings.github_key_prefix);
     setLocalPrefix(settings.local_key_prefix);
+    setEnableMonorepoResolution(settings.enable_monorepo_resolution);
+    setMonorepoDetectionLevel(settings.monorepo_detection_level ?? 2);
+    setMonorepoMode(settings.monorepo_mode);
+    setMonorepoWorkspaceGlobsText((settings.monorepo_workspace_globs || []).join('\n'));
+    setMonorepoExcludeGlobsText((settings.monorepo_exclude_globs || []).join('\n'));
+    setMonorepoRootMarkersText((settings.monorepo_root_markers || []).join('\n'));
+    setMonorepoMaxDepth(settings.monorepo_max_depth || 3);
   }
 
   async function saveWorkspaceSettings() {
@@ -309,8 +534,36 @@ export default function Page() {
         workspace_key: selectedWorkspace,
         resolution_order: resolutionOrder,
         auto_create_project: autoCreateProject,
+        auto_create_project_subprojects: autoCreateProjectSubprojects,
+        auto_switch_repo: autoSwitchRepo,
+        auto_switch_subproject: autoSwitchSubproject,
+        allow_manual_pin: allowManualPin,
+        enable_git_events: enableGitEvents,
+        enable_commit_events: enableCommitEvents,
+        enable_merge_events: enableMergeEvents,
+        enable_checkout_events: enableCheckoutEvents,
+        checkout_debounce_seconds: Math.min(Math.max(checkoutDebounceSeconds || 0, 0), 3600),
+        checkout_daily_limit: Math.min(Math.max(checkoutDailyLimit || 1, 1), 50000),
+        enable_auto_extraction: enableAutoExtraction,
+        auto_extraction_mode: autoExtractionMode,
+        auto_confirm_min_confidence: Math.min(Math.max(autoConfirmMinConfidence || 0, 0), 1),
+        auto_confirm_allowed_event_types: parseLineSeparatedValues(autoConfirmAllowedEventTypesText),
+        auto_confirm_keyword_allowlist: parseLineSeparatedValues(autoConfirmKeywordAllowlistText),
+        auto_confirm_keyword_denylist: parseLineSeparatedValues(autoConfirmKeywordDenylistText),
+        auto_extraction_batch_size: Math.min(Math.max(autoExtractionBatchSize || 1, 1), 2000),
+        search_default_mode: searchDefaultMode,
+        search_hybrid_alpha: Math.min(Math.max(searchHybridAlpha || 0, 0), 1),
+        search_hybrid_beta: Math.min(Math.max(searchHybridBeta || 0, 0), 1),
+        search_default_limit: Math.min(Math.max(searchDefaultLimit || 1, 1), 500),
         github_key_prefix: githubPrefix,
         local_key_prefix: localPrefix,
+        enable_monorepo_resolution: enableMonorepoResolution,
+        monorepo_detection_level: Math.min(Math.max(monorepoDetectionLevel || 2, 0), 3),
+        monorepo_mode: monorepoMode,
+        monorepo_workspace_globs: parseLineSeparatedValues(monorepoWorkspaceGlobsText),
+        monorepo_exclude_globs: parseLineSeparatedValues(monorepoExcludeGlobsText),
+        monorepo_root_markers: parseLineSeparatedValues(monorepoRootMarkersText),
+        monorepo_max_depth: Math.min(Math.max(monorepoMaxDepth || 3, 1), 12),
         reason: reason || undefined,
       }),
     });
@@ -479,6 +732,80 @@ export default function Page() {
     setRawMessageDetail(result);
   }
 
+  async function loadRawEvents(event?: FormEvent) {
+    event?.preventDefault();
+    if (!selectedWorkspace) {
+      return;
+    }
+    const query = new URLSearchParams({
+      workspace_key: selectedWorkspace,
+      limit: String(Math.min(Math.max(rawEventLimit, 1), 500)),
+    });
+    if (rawEventProjectFilter.trim()) {
+      query.set('project_key', rawEventProjectFilter.trim());
+    }
+    if (rawEventTypeFilter) {
+      query.set('event_type', rawEventTypeFilter);
+    }
+    if (rawEventCommitShaFilter.trim()) {
+      query.set('commit_sha', rawEventCommitShaFilter.trim());
+    }
+    const fromIso = rawEventFrom ? toISOString(rawEventFrom) : null;
+    const toIso = rawEventTo ? toISOString(rawEventTo) : null;
+    if (fromIso) {
+      query.set('from', fromIso);
+    }
+    if (toIso) {
+      query.set('to', toIso);
+    }
+    const data = await callApi<{ events: RawEventItem[] }>(`/v1/raw-events?${query.toString()}`);
+    setRawEvents(data.events);
+  }
+
+  async function submitCiEvent(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedWorkspace) {
+      return;
+    }
+
+    let metadata: Record<string, unknown> | undefined;
+    if (ciMetadata.trim()) {
+      try {
+        metadata = JSON.parse(ciMetadata) as Record<string, unknown>;
+      } catch (parseError) {
+        setError(
+          parseError instanceof Error
+            ? `ci metadata JSON parse error: ${parseError.message}`
+            : 'ci metadata JSON parse error'
+        );
+        return;
+      }
+    }
+
+    await callApi('/v1/ci-events', {
+      method: 'POST',
+      body: JSON.stringify({
+        workspace_key: selectedWorkspace,
+        status: ciStatus,
+        provider: ciProvider,
+        project_key: ciUseSelectedProject && selectedProject ? selectedProject : undefined,
+        workflow_name: ciWorkflowName.trim() || undefined,
+        workflow_run_id: ciWorkflowRunId.trim() || undefined,
+        workflow_run_url: ciWorkflowRunUrl.trim() || undefined,
+        repository: ciRepository.trim() || undefined,
+        branch: ciBranch.trim() || undefined,
+        sha: ciSha.trim() || undefined,
+        event_name: ciEventName.trim() || undefined,
+        job_name: ciJobName.trim() || undefined,
+        message: ciMessage.trim() || undefined,
+        metadata,
+      }),
+    });
+
+    setAuditActionPrefix('ci.');
+    await loadAuditLogs(selectedWorkspace);
+  }
+
   async function loadAuditLogs(workspaceKey: string) {
     const query = new URLSearchParams({
       workspace_key: workspaceKey,
@@ -494,9 +821,22 @@ export default function Page() {
   async function loadIntegrations(workspaceKey: string) {
     const query = new URLSearchParams({ workspace_key: workspaceKey });
     const data = await callApi<IntegrationSettingsResponse>(`/v1/integrations?${query.toString()}`);
-    setIntegrationStates(data.integrations);
+    const normalizedIntegrations: IntegrationSettingsResponse['integrations'] = {
+      ...data.integrations,
+      audit_reasoner: data.integrations.audit_reasoner || {
+        enabled: false,
+        configured: false,
+        source: 'none',
+        has_api_key: false,
+        provider_order: ['openai', 'claude', 'gemini'],
+        has_openai_api_key: false,
+        has_claude_api_key: false,
+        has_gemini_api_key: false,
+      },
+    };
+    setIntegrationStates(normalizedIntegrations);
 
-    const notion = data.integrations.notion;
+    const notion = normalizedIntegrations.notion;
     setNotionEnabled(notion.enabled);
     setNotionParentPageId(notion.default_parent_page_id || '');
     setNotionWriteEnabled(Boolean(notion.write_enabled));
@@ -504,7 +844,7 @@ export default function Page() {
     setNotionWriteOnMerge(Boolean(notion.write_on_merge));
     setNotionToken('');
 
-    const jira = data.integrations.jira;
+    const jira = normalizedIntegrations.jira;
     setJiraEnabled(jira.enabled);
     setJiraBaseUrl(jira.base_url || '');
     setJiraEmail(jira.email || '');
@@ -512,7 +852,7 @@ export default function Page() {
     setJiraWriteOnMerge(Boolean(jira.write_on_merge));
     setJiraToken('');
 
-    const confluence = data.integrations.confluence;
+    const confluence = normalizedIntegrations.confluence;
     setConfluenceEnabled(confluence.enabled);
     setConfluenceBaseUrl(confluence.base_url || '');
     setConfluenceEmail(confluence.email || '');
@@ -520,18 +860,19 @@ export default function Page() {
     setConfluenceWriteOnMerge(Boolean(confluence.write_on_merge));
     setConfluenceToken('');
 
-    const linear = data.integrations.linear;
+    const linear = normalizedIntegrations.linear;
     setLinearEnabled(linear.enabled);
     setLinearApiUrl(linear.api_url || '');
     setLinearWriteOnCommit(Boolean(linear.write_on_commit));
     setLinearWriteOnMerge(Boolean(linear.write_on_merge));
     setLinearApiKey('');
 
-    const slack = data.integrations.slack;
+    const slack = normalizedIntegrations.slack;
     setSlackEnabled(slack.enabled);
     setSlackDefaultChannel(slack.default_channel || '');
     setSlackActionPrefixes(
-      (slack.action_prefixes || []).join(',') || 'workspace_settings.,project_mapping.,integration.,git.'
+      (slack.action_prefixes || []).join(',') ||
+        'workspace_settings.,project_mapping.,integration.,git.,ci.'
     );
     setSlackFormat(slack.format === 'compact' ? 'compact' : 'detailed');
     setSlackIncludeTargetJson(slack.include_target_json !== false);
@@ -539,6 +880,32 @@ export default function Page() {
     setSlackRoutesJson(JSON.stringify(slack.routes || [], null, 2));
     setSlackSeverityRulesJson(JSON.stringify(slack.severity_rules || [], null, 2));
     setSlackWebhookUrl('');
+
+    const reasoner = normalizedIntegrations.audit_reasoner || {
+      enabled: false,
+      configured: false,
+      source: 'none' as const,
+      has_api_key: false,
+      provider_order: ['openai', 'claude', 'gemini'] as Array<'openai' | 'claude' | 'gemini'>,
+      has_openai_api_key: false,
+      has_claude_api_key: false,
+      has_gemini_api_key: false,
+    };
+    const providerOrder =
+      reasoner.provider_order && reasoner.provider_order.length > 0
+        ? reasoner.provider_order
+        : (['openai', 'claude', 'gemini'] as Array<'openai' | 'claude' | 'gemini'>);
+    setAuditReasonerEnabled(reasoner.enabled);
+    setAuditReasonerOrderCsv(providerOrder.join(','));
+    setAuditReasonerOpenAiModel(reasoner.openai_model || '');
+    setAuditReasonerOpenAiBaseUrl(reasoner.openai_base_url || '');
+    setAuditReasonerOpenAiApiKey('');
+    setAuditReasonerClaudeModel(reasoner.claude_model || '');
+    setAuditReasonerClaudeBaseUrl(reasoner.claude_base_url || '');
+    setAuditReasonerClaudeApiKey('');
+    setAuditReasonerGeminiModel(reasoner.gemini_model || '');
+    setAuditReasonerGeminiBaseUrl(reasoner.gemini_base_url || '');
+    setAuditReasonerGeminiApiKey('');
   }
 
   async function saveIntegration(
@@ -681,6 +1048,44 @@ export default function Page() {
     });
   }
 
+  async function saveAuditReasonerIntegration(event: FormEvent) {
+    event.preventDefault();
+    const providerOrder = auditReasonerOrderCsv
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter((item): item is 'openai' | 'claude' | 'gemini' => {
+        return item === 'openai' || item === 'claude' || item === 'gemini';
+      })
+      .filter((item, index, array) => array.indexOf(item) === index);
+    if (providerOrder.length === 0) {
+      setError('audit_reasoner provider order is required (openai/claude/gemini).');
+      return;
+    }
+    const config: Record<string, unknown> = {
+      provider_order: providerOrder,
+      openai_model: auditReasonerOpenAiModel.trim() || null,
+      openai_base_url: auditReasonerOpenAiBaseUrl.trim() || null,
+      claude_model: auditReasonerClaudeModel.trim() || null,
+      claude_base_url: auditReasonerClaudeBaseUrl.trim() || null,
+      gemini_model: auditReasonerGeminiModel.trim() || null,
+      gemini_base_url: auditReasonerGeminiBaseUrl.trim() || null,
+    };
+    if (auditReasonerOpenAiApiKey.trim()) {
+      config.openai_api_key = auditReasonerOpenAiApiKey.trim();
+    }
+    if (auditReasonerClaudeApiKey.trim()) {
+      config.claude_api_key = auditReasonerClaudeApiKey.trim();
+    }
+    if (auditReasonerGeminiApiKey.trim()) {
+      config.gemini_api_key = auditReasonerGeminiApiKey.trim();
+    }
+    await saveIntegration('audit_reasoner', {
+      enabled: auditReasonerEnabled,
+      config,
+      reason: integrationReason,
+    });
+  }
+
   async function runMemorySearch(event?: FormEvent) {
     event?.preventDefault();
     if (!selectedWorkspace) {
@@ -690,6 +1095,7 @@ export default function Page() {
     const query = new URLSearchParams({
       workspace_key: selectedWorkspace,
       limit: String(queryLimit),
+      mode: queryMode,
     });
     if (scopeSelectedProject && selectedProject) {
       query.set('project_key', selectedProject);
@@ -699,6 +1105,18 @@ export default function Page() {
     }
     if (queryText.trim()) {
       query.set('q', queryText.trim());
+    }
+    if (queryStatus) {
+      query.set('status', queryStatus);
+    }
+    if (querySource) {
+      query.set('source', querySource);
+    }
+    if (queryConfidenceMin.trim()) {
+      query.set('confidence_min', queryConfidenceMin.trim());
+    }
+    if (queryConfidenceMax.trim()) {
+      query.set('confidence_max', queryConfidenceMax.trim());
     }
     if (querySince) {
       const iso = toISOString(querySince);
@@ -712,6 +1130,32 @@ export default function Page() {
     if (!data.memories.some((memory) => memory.id === selectedMemoryId)) {
       setSelectedMemoryId(data.memories[0]?.id || '');
     }
+  }
+
+  async function updateSelectedMemoryStatus(status: 'draft' | 'confirmed' | 'rejected') {
+    if (!selectedMemoryId) {
+      return;
+    }
+    await callApi(`/v1/memories/${encodeURIComponent(selectedMemoryId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        status,
+      }),
+    });
+    await runMemorySearch();
+  }
+
+  async function saveSelectedMemoryContent() {
+    if (!selectedMemoryId) {
+      return;
+    }
+    await callApi(`/v1/memories/${encodeURIComponent(selectedMemoryId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        content: selectedMemoryDraftContent.trim(),
+      }),
+    });
+    await runMemorySearch();
   }
 
   async function createWorkspace(event: FormEvent) {
@@ -856,174 +1300,117 @@ export default function Page() {
     window.localStorage.setItem('memory-core-admin-key', value);
   }
 
-  function onDragStart(kind: ResolutionKind) {
-    setDraggingKind(kind);
-  }
-
-  function onDropOn(kind: ResolutionKind) {
-    if (!draggingKind || draggingKind === kind) {
-      return;
-    }
-    setResolutionOrder((current) => reorderKinds(current, draggingKind, kind));
-    setDraggingKind(null);
-  }
-
   return (
     <main className="dashboard">
-      <aside className="panel">
-        <div className="panel-body">
-          <div className="panel-title">Admin Session</div>
-          <form className="stack" onSubmit={submitApiKey}>
-            <label>
-              <div className="muted">Memory Core URL</div>
-              <input value={API_BASE_URL} readOnly />
-            </label>
-            <label>
-              <div className="muted">Admin API Key</div>
-              <input
-                value={apiKeyInput}
-                onChange={(event) => setApiKeyInput(event.target.value)}
-                placeholder="dev-admin-key-change-me"
-              />
-            </label>
-            <div className="toolbar">
-              <button className="primary" type="submit">
-                Connect
-              </button>
-              <button className="ghost" type="button" onClick={() => void initializeData()}>
-                Refresh
-              </button>
-            </div>
-          </form>
-
-          <div className="panel-title">Workspaces</div>
-          <div className="list">
-            {workspaces.map((workspace) => (
-              <button
-                key={workspace.id}
-                type="button"
-                className={workspace.key === selectedWorkspace ? 'active' : ''}
-                onClick={() => setSelectedWorkspace(workspace.key)}
-              >
-                <strong>{workspace.name}</strong>
-                <div className="muted">{workspace.key}</div>
-              </button>
-            ))}
-          </div>
-          <form className="stack" onSubmit={createWorkspace}>
-            <input
-              value={newWorkspaceKey}
-              onChange={(event) => setNewWorkspaceKey(event.target.value)}
-              placeholder="workspace key"
-              required
-            />
-            <input
-              value={newWorkspaceName}
-              onChange={(event) => setNewWorkspaceName(event.target.value)}
-              placeholder="workspace name"
-              required
-            />
-            <button type="submit">Create Workspace</button>
-          </form>
-
-          <div className="panel-title">Users</div>
-          <form className="stack" onSubmit={createUser}>
-            <input
-              value={newUserEmail}
-              onChange={(event) => setNewUserEmail(event.target.value)}
-              placeholder="user@email.com"
-              required
-            />
-            <input
-              value={newUserName}
-              onChange={(event) => setNewUserName(event.target.value)}
-              placeholder="display name (optional)"
-            />
-            <button type="submit">Create User</button>
-          </form>
-          <div className="list">
-            {users.map((user) => (
-              <button key={user.id} type="button">
-                <strong>{user.email}</strong>
-                <div className="muted">{user.name || 'no name'}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-      </aside>
+      <AdminSessionSidebar
+        apiBaseUrl={API_BASE_URL}
+        apiKeyInput={apiKeyInput}
+        setApiKeyInput={setApiKeyInput}
+        submitApiKey={submitApiKey}
+        initializeData={initializeData}
+        workspaces={workspaces}
+        selectedWorkspace={selectedWorkspace}
+        setSelectedWorkspace={setSelectedWorkspace}
+        createWorkspace={createWorkspace}
+        newWorkspaceKey={newWorkspaceKey}
+        setNewWorkspaceKey={setNewWorkspaceKey}
+        newWorkspaceName={newWorkspaceName}
+        setNewWorkspaceName={setNewWorkspaceName}
+        createUser={createUser}
+        newUserEmail={newUserEmail}
+        setNewUserEmail={setNewUserEmail}
+        newUserName={newUserName}
+        setNewUserName={setNewUserName}
+        users={users}
+      />
 
       <section className="content">
-        <article className="panel">
+        <section className="panel">
           <div className="panel-body">
-            <div className="panel-title">Project Resolution Settings</div>
-            <div className="muted">Drag to reorder: 1 &gt; 2 &gt; 3</div>
-            <div className="drag-list">
-              {resolutionOrder.map((kind) => (
-                <div
-                  key={kind}
-                  className="drag-item"
-                  draggable
-                  onDragStart={() => onDragStart(kind)}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={() => onDropOn(kind)}
-                >
-                  <strong>{kind}</strong>
-                  <div className="muted">{kindDescription(kind)}</div>
-                </div>
-              ))}
-            </div>
-            <label className="muted">
-              <input
-                type="checkbox"
-                checked={autoCreateProject}
-                onChange={(event) => setAutoCreateProject(event.target.checked)}
-              />{' '}
-              auto create project when mapping is missing
-            </label>
-            <div className="row">
-              <label>
-                <div className="muted">GitHub Prefix</div>
-                <input
-                  value={githubPrefix}
-                  onChange={(event) => setGithubPrefix(event.target.value)}
-                  placeholder="github:"
-                />
-              </label>
-              <label>
-                <div className="muted">Local Prefix</div>
-                <input
-                  value={localPrefix}
-                  onChange={(event) => setLocalPrefix(event.target.value)}
-                  placeholder="local:"
-                />
-              </label>
-            </div>
-            <label>
-              <div className="muted">Reason (for audit log)</div>
-              <input
-                value={workspaceSettingsReason}
-                onChange={(event) => setWorkspaceSettingsReason(event.target.value)}
-                placeholder="why this setting changed"
-              />
-            </label>
-            <div className="toolbar">
-              <button className="primary" type="button" onClick={() => void saveWorkspaceSettings()}>
-                Save Resolution Settings
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setResolutionOrder(RESOLUTION_KINDS);
-                  setAutoCreateProject(true);
-                  setGithubPrefix('github:');
-                  setLocalPrefix('local:');
-                }}
-              >
-                Reset Default
-              </button>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h1 className="text-2xl font-semibold tracking-tight">Memory Core Admin Console</h1>
+                <p className="muted">Workspace governance, integrations, import pipeline, and audit visibility.</p>
+              </div>
+              <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">
+                {busy ? 'working...' : 'ready'} • workspace: <strong>{selectedWorkspace || '-'}</strong> • project:{' '}
+                <strong>{selectedProject || '-'}</strong>
+              </div>
             </div>
           </div>
-        </article>
+        </section>
+
+        <ResolutionSettingsPanel
+          resolutionOrder={resolutionOrder}
+          setResolutionOrder={setResolutionOrder}
+          autoCreateProject={autoCreateProject}
+          setAutoCreateProject={setAutoCreateProject}
+          autoCreateProjectSubprojects={autoCreateProjectSubprojects}
+          setAutoCreateProjectSubprojects={setAutoCreateProjectSubprojects}
+          autoSwitchRepo={autoSwitchRepo}
+          setAutoSwitchRepo={setAutoSwitchRepo}
+          autoSwitchSubproject={autoSwitchSubproject}
+          setAutoSwitchSubproject={setAutoSwitchSubproject}
+          allowManualPin={allowManualPin}
+          setAllowManualPin={setAllowManualPin}
+          enableGitEvents={enableGitEvents}
+          setEnableGitEvents={setEnableGitEvents}
+          enableCommitEvents={enableCommitEvents}
+          setEnableCommitEvents={setEnableCommitEvents}
+          enableMergeEvents={enableMergeEvents}
+          setEnableMergeEvents={setEnableMergeEvents}
+          enableCheckoutEvents={enableCheckoutEvents}
+          setEnableCheckoutEvents={setEnableCheckoutEvents}
+          checkoutDebounceSeconds={checkoutDebounceSeconds}
+          setCheckoutDebounceSeconds={setCheckoutDebounceSeconds}
+          checkoutDailyLimit={checkoutDailyLimit}
+          setCheckoutDailyLimit={setCheckoutDailyLimit}
+          enableAutoExtraction={enableAutoExtraction}
+          setEnableAutoExtraction={setEnableAutoExtraction}
+          autoExtractionMode={autoExtractionMode}
+          setAutoExtractionMode={setAutoExtractionMode}
+          autoConfirmMinConfidence={autoConfirmMinConfidence}
+          setAutoConfirmMinConfidence={setAutoConfirmMinConfidence}
+          autoConfirmAllowedEventTypesText={autoConfirmAllowedEventTypesText}
+          setAutoConfirmAllowedEventTypesText={setAutoConfirmAllowedEventTypesText}
+          autoConfirmKeywordAllowlistText={autoConfirmKeywordAllowlistText}
+          setAutoConfirmKeywordAllowlistText={setAutoConfirmKeywordAllowlistText}
+          autoConfirmKeywordDenylistText={autoConfirmKeywordDenylistText}
+          setAutoConfirmKeywordDenylistText={setAutoConfirmKeywordDenylistText}
+          autoExtractionBatchSize={autoExtractionBatchSize}
+          setAutoExtractionBatchSize={setAutoExtractionBatchSize}
+          searchDefaultMode={searchDefaultMode}
+          setSearchDefaultMode={setSearchDefaultMode}
+          searchHybridAlpha={searchHybridAlpha}
+          setSearchHybridAlpha={setSearchHybridAlpha}
+          searchHybridBeta={searchHybridBeta}
+          setSearchHybridBeta={setSearchHybridBeta}
+          searchDefaultLimit={searchDefaultLimit}
+          setSearchDefaultLimit={setSearchDefaultLimit}
+          githubPrefix={githubPrefix}
+          setGithubPrefix={setGithubPrefix}
+          localPrefix={localPrefix}
+          setLocalPrefix={setLocalPrefix}
+          enableMonorepoResolution={enableMonorepoResolution}
+          setEnableMonorepoResolution={setEnableMonorepoResolution}
+          monorepoDetectionLevel={monorepoDetectionLevel}
+          setMonorepoDetectionLevel={setMonorepoDetectionLevel}
+          monorepoMode={monorepoMode}
+          setMonorepoMode={setMonorepoMode}
+          monorepoWorkspaceGlobsText={monorepoWorkspaceGlobsText}
+          setMonorepoWorkspaceGlobsText={setMonorepoWorkspaceGlobsText}
+          monorepoExcludeGlobsText={monorepoExcludeGlobsText}
+          setMonorepoExcludeGlobsText={setMonorepoExcludeGlobsText}
+          monorepoRootMarkersText={monorepoRootMarkersText}
+          setMonorepoRootMarkersText={setMonorepoRootMarkersText}
+          monorepoMaxDepth={monorepoMaxDepth}
+          setMonorepoMaxDepth={setMonorepoMaxDepth}
+          workspaceSettingsReason={workspaceSettingsReason}
+          setWorkspaceSettingsReason={setWorkspaceSettingsReason}
+          saveWorkspaceSettings={saveWorkspaceSettings}
+          draggingKind={draggingKind}
+          setDraggingKind={setDraggingKind}
+        />
 
         <IntegrationsPanel
           integrationStates={integrationStates}
@@ -1103,600 +1490,209 @@ export default function Page() {
           slackSeverityRulesJson={slackSeverityRulesJson}
           setSlackSeverityRulesJson={setSlackSeverityRulesJson}
           saveSlackIntegration={saveSlackIntegration}
+          auditReasonerLocked={auditReasonerLocked}
+          auditReasonerEnabled={auditReasonerEnabled}
+          setAuditReasonerEnabled={setAuditReasonerEnabled}
+          auditReasonerOrderCsv={auditReasonerOrderCsv}
+          setAuditReasonerOrderCsv={setAuditReasonerOrderCsv}
+          auditReasonerOpenAiModel={auditReasonerOpenAiModel}
+          setAuditReasonerOpenAiModel={setAuditReasonerOpenAiModel}
+          auditReasonerOpenAiBaseUrl={auditReasonerOpenAiBaseUrl}
+          setAuditReasonerOpenAiBaseUrl={setAuditReasonerOpenAiBaseUrl}
+          auditReasonerOpenAiApiKey={auditReasonerOpenAiApiKey}
+          setAuditReasonerOpenAiApiKey={setAuditReasonerOpenAiApiKey}
+          auditReasonerClaudeModel={auditReasonerClaudeModel}
+          setAuditReasonerClaudeModel={setAuditReasonerClaudeModel}
+          auditReasonerClaudeBaseUrl={auditReasonerClaudeBaseUrl}
+          setAuditReasonerClaudeBaseUrl={setAuditReasonerClaudeBaseUrl}
+          auditReasonerClaudeApiKey={auditReasonerClaudeApiKey}
+          setAuditReasonerClaudeApiKey={setAuditReasonerClaudeApiKey}
+          auditReasonerGeminiModel={auditReasonerGeminiModel}
+          setAuditReasonerGeminiModel={setAuditReasonerGeminiModel}
+          auditReasonerGeminiBaseUrl={auditReasonerGeminiBaseUrl}
+          setAuditReasonerGeminiBaseUrl={setAuditReasonerGeminiBaseUrl}
+          auditReasonerGeminiApiKey={auditReasonerGeminiApiKey}
+          setAuditReasonerGeminiApiKey={setAuditReasonerGeminiApiKey}
+          saveAuditReasonerIntegration={saveAuditReasonerIntegration}
         />
 
-        <article className="panel">
-          <div className="panel-body">
-            <div className="panel-title">Project Mappings</div>
-            <label>
-              <div className="muted">Reason (for add/update audit)</div>
-              <input
-                value={mappingReason}
-                onChange={(event) => setMappingReason(event.target.value)}
-                placeholder="why this mapping changed"
-              />
-            </label>
-            <form className="stack" onSubmit={createProjectMapping}>
-              <div className="row">
-                <select value={newMappingKind} onChange={(event) => setNewMappingKind(event.target.value as ResolutionKind)}>
-                  {RESOLUTION_KINDS.map((kind) => (
-                    <option key={kind} value={kind}>
-                      {kind}
-                    </option>
-                  ))}
-                </select>
-                <select value={newMappingProjectKey} onChange={(event) => setNewMappingProjectKey(event.target.value)}>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.key}>
-                      {project.key}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="row">
-                <input
-                  value={newMappingExternalId}
-                  onChange={(event) => setNewMappingExternalId(event.target.value)}
-                  placeholder="external id (owner/repo or slug)"
-                  required
-                />
-                <input
-                  value={newMappingPriority}
-                  onChange={(event) => setNewMappingPriority(event.target.value)}
-                  placeholder="priority (optional)"
-                />
-              </div>
-              <label className="muted">
-                <input
-                  type="checkbox"
-                  checked={newMappingEnabled}
-                  onChange={(event) => setNewMappingEnabled(event.target.checked)}
-                />{' '}
-                enabled
-              </label>
-              <button type="submit">Add Mapping</button>
-            </form>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Kind</th>
-                    <th>External Id</th>
-                    <th>Project</th>
-                    <th>Priority</th>
-                    <th>Enabled</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {mappings.map((mapping) => (
-                    <tr key={mapping.id}>
-                      <td>{mapping.kind}</td>
-                      <td>
-                        <input
-                          defaultValue={mapping.external_id}
-                          onBlur={(event) => {
-                            const value = event.target.value.trim();
-                            if (value && value !== mapping.external_id) {
-                              void patchMapping(mapping.id, { external_id: value });
-                            }
-                          }}
-                        />
-                      </td>
-                      <td>
-                        <select
-                          value={mapping.project.key}
-                          onChange={(event) => void patchMapping(mapping.id, { project_key: event.target.value })}
-                        >
-                          {projects.map((project) => (
-                            <option key={project.id} value={project.key}>
-                              {project.key}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          defaultValue={mapping.priority}
-                          onBlur={(event) => {
-                            const value = Number(event.target.value);
-                            if (!Number.isNaN(value) && value !== mapping.priority) {
-                              void patchMapping(mapping.id, { priority: value });
-                            }
-                          }}
-                        />
-                      </td>
-                      <td>
-                        <label className="muted">
-                          <input
-                            type="checkbox"
-                            checked={mapping.is_enabled}
-                            onChange={(event) => void patchMapping(mapping.id, { is_enabled: event.target.checked })}
-                          />
-                        </label>
-                      </td>
-                      <td>
-                        <div className="inline-actions">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              void patchMapping(mapping.id, { priority: Math.max(0, mapping.priority - 1) })
-                            }
-                          >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => void patchMapping(mapping.id, { priority: mapping.priority + 1 })}
-                          >
-                            ↓
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </article>
+        <ProjectMappingsPanel
+          mappingReason={mappingReason}
+          setMappingReason={setMappingReason}
+          createProjectMapping={createProjectMapping}
+          newMappingKind={newMappingKind}
+          setNewMappingKind={setNewMappingKind}
+          newMappingProjectKey={newMappingProjectKey}
+          setNewMappingProjectKey={setNewMappingProjectKey}
+          newMappingExternalId={newMappingExternalId}
+          setNewMappingExternalId={setNewMappingExternalId}
+          newMappingPriority={newMappingPriority}
+          setNewMappingPriority={setNewMappingPriority}
+          newMappingEnabled={newMappingEnabled}
+          setNewMappingEnabled={setNewMappingEnabled}
+          projects={projects}
+          mappings={mappings}
+          patchMapping={patchMapping}
+        />
 
-        <article className="panel">
-          <div className="panel-body">
-            <div className="panel-title">Projects</div>
-            <div className="list">
-              {projects.map((project) => (
-                <button
-                  key={project.id}
-                  type="button"
-                  className={project.key === selectedProject ? 'active' : ''}
-                  onClick={() => setSelectedProject(project.key)}
-                >
-                  <strong>{project.name}</strong>
-                  <div className="muted">{project.key}</div>
-                </button>
-              ))}
-            </div>
-            <form className="row" onSubmit={createProject}>
-              <input
-                value={newProjectKey}
-                onChange={(event) => setNewProjectKey(event.target.value)}
-                placeholder="project key"
-                required
-              />
-              <input
-                value={newProjectName}
-                onChange={(event) => setNewProjectName(event.target.value)}
-                placeholder="project name"
-                required
-              />
-              <button type="submit">Create Project</button>
-            </form>
-          </div>
-        </article>
+        <ProjectsPanel
+          projects={filteredProjects}
+          selectedProject={selectedProject}
+          setSelectedProject={setSelectedProject}
+          projectViewFilter={projectViewFilter}
+          setProjectViewFilter={setProjectViewFilter}
+          createProject={createProject}
+          newProjectKey={newProjectKey}
+          setNewProjectKey={setNewProjectKey}
+          newProjectName={newProjectName}
+          setNewProjectName={setNewProjectName}
+        />
 
-        <article className="panel">
-          <div className="panel-body">
-            <div className="panel-title">Project Members</div>
-            <form className="row" onSubmit={addProjectMember}>
-              <input
-                value={inviteEmail}
-                onChange={(event) => setInviteEmail(event.target.value)}
-                placeholder="member email"
-                required
-              />
-              <select value={inviteRole} onChange={(event) => setInviteRole(event.target.value)}>
-                <option value="MEMBER">MEMBER</option>
-                <option value="ADMIN">ADMIN</option>
-              </select>
-              <button type="submit">Invite Member</button>
-            </form>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>User</th>
-                    <th>Role</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {members.map((member) => (
-                    <tr key={member.id}>
-                      <td>
-                        {member.user.email}
-                        <div className="muted">{member.user.name || 'no name'}</div>
-                      </td>
-                      <td>
-                        <span className="pill">{member.role}</span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </article>
+        <ProjectMembersPanel
+          addProjectMember={addProjectMember}
+          inviteEmail={inviteEmail}
+          setInviteEmail={setInviteEmail}
+          inviteRole={inviteRole}
+          setInviteRole={setInviteRole}
+          members={members}
+        />
 
-        <article className="panel">
-          <div className="panel-body">
-            <div className="panel-title">Memories</div>
-            <form className="stack" onSubmit={runMemorySearch}>
-              <div className="row">
-                <input
-                  value={queryText}
-                  onChange={(event) => setQueryText(event.target.value)}
-                  placeholder="search content"
-                />
-                <select value={queryType} onChange={(event) => setQueryType(event.target.value)}>
-                  <option value="">All types</option>
-                  {MEMORY_TYPES.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="row">
-                <input
-                  type="datetime-local"
-                  value={querySince}
-                  onChange={(event) => setQuerySince(event.target.value)}
-                />
-                <input
-                  type="number"
-                  min={1}
-                  max={200}
-                  value={queryLimit}
-                  onChange={(event) => setQueryLimit(Number(event.target.value))}
-                />
-              </div>
-              <label className="muted">
-                <input
-                  type="checkbox"
-                  checked={scopeSelectedProject}
-                  onChange={(event) => setScopeSelectedProject(event.target.checked)}
-                />{' '}
-                scope to selected project
-              </label>
-              <div className="toolbar">
-                <button className="primary" type="submit">
-                  Search
-                </button>
-                <button className="ghost" type="button" onClick={() => void runMemorySearch()}>
-                  Refresh
-                </button>
-              </div>
-            </form>
+        <MemoriesPanel
+          runMemorySearch={runMemorySearch}
+          queryText={queryText}
+          setQueryText={setQueryText}
+          queryType={queryType}
+          setQueryType={setQueryType}
+          queryMode={queryMode}
+          setQueryMode={setQueryMode}
+          queryStatus={queryStatus}
+          setQueryStatus={setQueryStatus}
+          querySource={querySource}
+          setQuerySource={setQuerySource}
+          queryConfidenceMin={queryConfidenceMin}
+          setQueryConfidenceMin={setQueryConfidenceMin}
+          queryConfidenceMax={queryConfidenceMax}
+          setQueryConfidenceMax={setQueryConfidenceMax}
+          querySince={querySince}
+          setQuerySince={setQuerySince}
+          queryLimit={queryLimit}
+          setQueryLimit={setQueryLimit}
+          scopeSelectedProject={scopeSelectedProject}
+          setScopeSelectedProject={setScopeSelectedProject}
+          memories={memories}
+          setSelectedMemoryId={setSelectedMemoryId}
+          createMemory={createMemory}
+          newMemoryType={newMemoryType}
+          setNewMemoryType={setNewMemoryType}
+          selectedProject={selectedProject}
+          newMemoryContent={newMemoryContent}
+          setNewMemoryContent={setNewMemoryContent}
+          newMemoryMetadata={newMemoryMetadata}
+          setNewMemoryMetadata={setNewMemoryMetadata}
+          selectedMemory={selectedMemory}
+          selectedMemoryDraftContent={selectedMemoryDraftContent}
+          setSelectedMemoryDraftContent={setSelectedMemoryDraftContent}
+          updateSelectedMemoryStatus={updateSelectedMemoryStatus}
+          saveSelectedMemoryContent={saveSelectedMemoryContent}
+        />
 
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Created</th>
-                    <th>Type</th>
-                    <th>Scope</th>
-                    <th>Content</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {memories.map((memory) => (
-                    <tr key={memory.id} onClick={() => setSelectedMemoryId(memory.id)}>
-                      <td>{new Date(memory.createdAt).toLocaleString()}</td>
-                      <td>
-                        <span className="pill">{memory.type}</span>
-                      </td>
-                      <td>
-                        {memory.project.workspace.key}/{memory.project.key}
-                      </td>
-                      <td>{memory.content}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+        <ImportsPanel
+          uploadImport={uploadImport}
+          importSource={importSource}
+          setImportSource={setImportSource}
+          setImportFile={setImportFile}
+          importUseSelectedProject={importUseSelectedProject}
+          setImportUseSelectedProject={setImportUseSelectedProject}
+          imports={imports}
+          setSelectedImportId={setSelectedImportId}
+          parseImport={parseImport}
+          extractImport={extractImport}
+          loadStagedMemories={loadStagedMemories}
+          selectedImport={selectedImport}
+          stagedMemories={stagedMemories}
+          selectedStagedIds={selectedStagedIds}
+          toggleStagedMemory={toggleStagedMemory}
+          selectedImportId={selectedImportId}
+          commitImport={commitImport}
+        />
 
-            <div className="panel-title">Create Memory</div>
-            <form className="stack" onSubmit={createMemory}>
-              <div className="row">
-                <select value={newMemoryType} onChange={(event) => setNewMemoryType(event.target.value)}>
-                  {MEMORY_TYPES.map((value) => (
-                    <option key={value} value={value}>
-                      {value}
-                    </option>
-                  ))}
-                </select>
-                <input value={selectedProject} readOnly />
-              </div>
-              <textarea
-                value={newMemoryContent}
-                onChange={(event) => setNewMemoryContent(event.target.value)}
-                placeholder="memory content"
-                required
-              />
-              <textarea
-                value={newMemoryMetadata}
-                onChange={(event) => setNewMemoryMetadata(event.target.value)}
-                placeholder='{"source":"admin-ui"}'
-              />
-              <button type="submit">Store Memory</button>
-            </form>
+        <RawSearchPanel
+          runRawSearch={runRawSearch}
+          rawQuery={rawQuery}
+          setRawQuery={setRawQuery}
+          rawLimit={rawLimit}
+          setRawLimit={setRawLimit}
+          rawUseSelectedProject={rawUseSelectedProject}
+          setRawUseSelectedProject={setRawUseSelectedProject}
+          rawMatches={rawMatches}
+          viewRawMessage={viewRawMessage}
+          rawMessageDetail={rawMessageDetail}
+        />
 
-            <div className="panel-title">Memory Detail</div>
-            {selectedMemory ? (
-              <pre>{JSON.stringify(selectedMemory, null, 2)}</pre>
-            ) : (
-              <div className="muted">Select a memory row to inspect details.</div>
-            )}
-          </div>
-        </article>
+        <RawEventsPanel
+          selectedWorkspace={selectedWorkspace}
+          projects={projects}
+          rawEventProjectFilter={rawEventProjectFilter}
+          setRawEventProjectFilter={setRawEventProjectFilter}
+          rawEventTypeFilter={rawEventTypeFilter}
+          setRawEventTypeFilter={setRawEventTypeFilter}
+          rawEventCommitShaFilter={rawEventCommitShaFilter}
+          setRawEventCommitShaFilter={setRawEventCommitShaFilter}
+          rawEventFrom={rawEventFrom}
+          setRawEventFrom={setRawEventFrom}
+          rawEventTo={rawEventTo}
+          setRawEventTo={setRawEventTo}
+          rawEventLimit={rawEventLimit}
+          setRawEventLimit={setRawEventLimit}
+          rawEvents={rawEvents}
+          loadRawEvents={loadRawEvents}
+        />
 
-        <article className="panel">
-          <div className="panel-body">
-            <div className="panel-title">Imports</div>
-            <form className="stack" onSubmit={uploadImport}>
-              <div className="row">
-                <select value={importSource} onChange={(event) => setImportSource(event.target.value as ImportSource)}>
-                  <option value="codex">codex</option>
-                  <option value="claude">claude</option>
-                  <option value="generic">generic</option>
-                </select>
-                <input
-                  type="file"
-                  onChange={(event) => setImportFile(event.target.files?.[0] || null)}
-                  required
-                />
-              </div>
-              <label className="muted">
-                <input
-                  type="checkbox"
-                  checked={importUseSelectedProject}
-                  onChange={(event) => setImportUseSelectedProject(event.target.checked)}
-                />{' '}
-                bind imported raw session to selected project when possible
-              </label>
-              <button type="submit">Upload Import</button>
-            </form>
+        <CiEventsPanel
+          submitCiEvent={submitCiEvent}
+          ciStatus={ciStatus}
+          setCiStatus={setCiStatus}
+          ciProvider={ciProvider}
+          setCiProvider={setCiProvider}
+          ciUseSelectedProject={ciUseSelectedProject}
+          setCiUseSelectedProject={setCiUseSelectedProject}
+          ciWorkflowName={ciWorkflowName}
+          setCiWorkflowName={setCiWorkflowName}
+          ciWorkflowRunId={ciWorkflowRunId}
+          setCiWorkflowRunId={setCiWorkflowRunId}
+          ciWorkflowRunUrl={ciWorkflowRunUrl}
+          setCiWorkflowRunUrl={setCiWorkflowRunUrl}
+          ciRepository={ciRepository}
+          setCiRepository={setCiRepository}
+          ciBranch={ciBranch}
+          setCiBranch={setCiBranch}
+          ciSha={ciSha}
+          setCiSha={setCiSha}
+          ciEventName={ciEventName}
+          setCiEventName={setCiEventName}
+          ciJobName={ciJobName}
+          setCiJobName={setCiJobName}
+          ciMessage={ciMessage}
+          setCiMessage={setCiMessage}
+          ciMetadata={ciMetadata}
+          setCiMetadata={setCiMetadata}
+        />
 
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Created</th>
-                    <th>Source</th>
-                    <th>Status</th>
-                    <th>File</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {imports.map((item) => (
-                    <tr key={item.id} onClick={() => setSelectedImportId(item.id)}>
-                      <td>{new Date(item.createdAt).toLocaleString()}</td>
-                      <td>{item.source}</td>
-                      <td>
-                        <span className="pill">{item.status}</span>
-                      </td>
-                      <td>{item.fileName}</td>
-                      <td>
-                        <div className="inline-actions">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedImportId(item.id);
-                              void parseImport(item.id);
-                            }}
-                          >
-                            parse
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedImportId(item.id);
-                              void extractImport(item.id);
-                            }}
-                          >
-                            extract
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedImportId(item.id);
-                              void loadStagedMemories(item.id);
-                            }}
-                          >
-                            staged
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="panel-title">Staged Memories</div>
-            {selectedImport ? (
-              <div className="muted">
-                selected import: <strong>{selectedImport.fileName}</strong> ({selectedImport.status})
-              </div>
-            ) : (
-              <div className="muted">Select an import row.</div>
-            )}
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Select</th>
-                    <th>Type</th>
-                    <th>Project</th>
-                    <th>Content</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stagedMemories.map((candidate) => (
-                    <tr key={candidate.id}>
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={selectedStagedIds.includes(candidate.id)}
-                          onChange={(event) => toggleStagedMemory(candidate.id, event.target.checked)}
-                        />
-                      </td>
-                      <td>{candidate.type}</td>
-                      <td>{candidate.project?.key || '-'}</td>
-                      <td>{candidate.content}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="toolbar">
-              <button
-                type="button"
-                className="primary"
-                disabled={!selectedImportId || selectedStagedIds.length === 0}
-                onClick={() => void commitImport(selectedImportId)}
-              >
-                Commit Selected ({selectedStagedIds.length})
-              </button>
-            </div>
-          </div>
-        </article>
-
-        <article className="panel">
-          <div className="panel-body">
-            <div className="panel-title">Raw Search (Snippet Only)</div>
-            <form className="stack" onSubmit={runRawSearch}>
-              <div className="row">
-                <input
-                  value={rawQuery}
-                  onChange={(event) => setRawQuery(event.target.value)}
-                  placeholder="query text"
-                  required
-                />
-                <input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={rawLimit}
-                  onChange={(event) => setRawLimit(Number(event.target.value))}
-                />
-              </div>
-              <label className="muted">
-                <input
-                  type="checkbox"
-                  checked={rawUseSelectedProject}
-                  onChange={(event) => setRawUseSelectedProject(event.target.checked)}
-                />{' '}
-                scope raw search to selected project
-              </label>
-              <div className="toolbar">
-                <button className="primary" type="submit">
-                  Search Raw Snippets
-                </button>
-              </div>
-            </form>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Created</th>
-                    <th>Role</th>
-                    <th>Scope</th>
-                    <th>Snippet</th>
-                    <th>View</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rawMatches.map((match) => (
-                    <tr key={match.message_id}>
-                      <td>{new Date(match.created_at).toLocaleString()}</td>
-                      <td>{match.role}</td>
-                      <td>{match.project_key || '-'}</td>
-                      <td>{match.snippet}</td>
-                      <td>
-                        <button type="button" onClick={() => void viewRawMessage(match.message_id)}>
-                          open
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <div className="panel-title">Raw Message Detail</div>
-            {rawMessageDetail ? (
-              <pre>{JSON.stringify(rawMessageDetail, null, 2)}</pre>
-            ) : (
-              <div className="muted">Select a raw search row and open message to view audited snippet.</div>
-            )}
-          </div>
-        </article>
-
-        <article className="panel">
-          <div className="panel-body">
-            <div className="panel-title">Audit Logs</div>
-            <form
-              className="row"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!selectedWorkspace) {
-                  return;
-                }
-                void loadAuditLogs(selectedWorkspace);
-              }}
-            >
-              <input
-                value={auditActionPrefix}
-                onChange={(event) => setAuditActionPrefix(event.target.value)}
-                placeholder="action prefix (e.g. raw.)"
-              />
-              <input
-                type="number"
-                min={1}
-                max={200}
-                value={auditLimit}
-                onChange={(event) => setAuditLimit(Number(event.target.value))}
-              />
-              <button type="submit">Refresh Audit</button>
-            </form>
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Created</th>
-                    <th>Action</th>
-                    <th>Actor</th>
-                    <th>Target</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {auditLogs.map((log) => (
-                    <tr key={log.id}>
-                      <td>{new Date(log.createdAt).toLocaleString()}</td>
-                      <td>{log.action}</td>
-                      <td>{log.actorUserId}</td>
-                      <td>
-                        <pre>{JSON.stringify(log.target, null, 2)}</pre>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </article>
+        <AuditLogsPanel
+          auditActionPrefix={auditActionPrefix}
+          setAuditActionPrefix={setAuditActionPrefix}
+          auditLimit={auditLimit}
+          setAuditLimit={setAuditLimit}
+          selectedWorkspace={selectedWorkspace}
+          loadAuditLogs={loadAuditLogs}
+          auditLogs={auditLogs}
+        />
         {error ? <div className="error">{error}</div> : null}
         {missingCoreUrl ? (
           <div className="error">
             NEXT_PUBLIC_MEMORY_CORE_URL is missing. Set it to a browser-reachable memory-core URL.
           </div>
         ) : null}
-        <div className="muted">
-          {busy ? 'working...' : 'ready'} • workspace:{' '}
-          <strong>{selectedWorkspace || '-'}</strong> • project: <strong>{selectedProject || '-'}</strong>
-        </div>
       </section>
     </main>
   );

@@ -21,10 +21,10 @@
   - `pnpm dev` (runs shared + memory-core + mcp-adapter + admin-ui)
   - `pnpm test:workspace`
 - Per-app:
-  - `pnpm --filter @context-sync/memory-core build|dev|test`
-  - `pnpm --filter @context-sync/mcp-adapter build|dev|test`
-  - `pnpm --filter @context-sync/admin-ui build|dev|test`
-  - `pnpm --filter @context-sync/shared build|dev|test`
+  - `pnpm --filter @claustrum/memory-core build|dev|test`
+  - `pnpm --filter @claustrum/mcp-adapter build|dev|test`
+  - `pnpm --filter @claustrum/admin-ui build|dev|test`
+  - `pnpm --filter @claustrum/shared build|dev|test`
 - Docker:
   - image-based deploy (default): `docker compose up -d`
   - image-based local DB: `docker compose --profile localdb up -d`

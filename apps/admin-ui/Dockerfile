@@ -13,7 +13,7 @@ RUN pnpm install --no-frozen-lockfile --ignore-scripts
 
 COPY apps/admin-ui apps/admin-ui
 
-RUN pnpm --filter @context-sync/admin-ui build
+RUN pnpm --filter @claustrum/admin-ui build
 
 WORKDIR /workspace/apps/admin-ui
 CMD ["pnpm", "start"]

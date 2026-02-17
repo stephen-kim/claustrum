@@ -1,0 +1,88 @@
+name: Claustrum CI Events
+
+on:
+  workflow_run:
+    # Update this list to match workflows you want to monitor.
+    workflows:
+      - Docker Publish
+      - Notion Merge Sync
+    types:
+      - completed
+
+jobs:
+  forward-ci-event:
+    if: ${{ github.event.workflow_run.name != 'Claustrum CI Events' && secrets.MEMORY_CORE_URL != '' && secrets.MEMORY_CORE_API_KEY != '' && secrets.MEMORY_CORE_WORKSPACE_KEY != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Send workflow result to memory-core
+        shell: bash
+        env:
+          MEMORY_CORE_URL: ${{ secrets.MEMORY_CORE_URL }}
+          MEMORY_CORE_API_KEY: ${{ secrets.MEMORY_CORE_API_KEY }}
+          MEMORY_CORE_WORKSPACE_KEY: ${{ secrets.MEMORY_CORE_WORKSPACE_KEY }}
+          MEMORY_CORE_PROJECT_KEY: ${{ secrets.MEMORY_CORE_PROJECT_KEY }}
+          WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          WORKFLOW_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          WORKFLOW_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          WORKFLOW_EVENT: ${{ github.event.workflow_run.event }}
+          WORKFLOW_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          WORKFLOW_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_REPOSITORY: ${{ github.repository }}
+          WORKFLOW_ACTOR: ${{ github.event.workflow_run.actor.login }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        run: |
+          set -euo pipefail
+
+          status="failure"
+          if [ "${WORKFLOW_CONCLUSION}" = "success" ]; then
+            status="success"
+          fi
+
+          payload=$(jq -n \
+            --arg workspace_key "${MEMORY_CORE_WORKSPACE_KEY}" \
+            --arg status "${status}" \
+            --arg provider "github_actions" \
+            --arg workflow_name "${WORKFLOW_NAME}" \
+            --arg workflow_run_id "${WORKFLOW_RUN_ID}" \
+            --arg workflow_run_url "${WORKFLOW_RUN_URL}" \
+            --arg repository "${WORKFLOW_REPOSITORY}" \
+            --arg branch "${WORKFLOW_BRANCH}" \
+            --arg sha "${WORKFLOW_SHA}" \
+            --arg event_name "${WORKFLOW_EVENT}" \
+            --arg job_name "${WORKFLOW_NAME}" \
+            --arg message "workflow ${WORKFLOW_CONCLUSION}" \
+            --arg actor "${WORKFLOW_ACTOR}" \
+            --arg conclusion "${WORKFLOW_CONCLUSION}" \
+            --arg run_attempt "${WORKFLOW_RUN_ATTEMPT}" \
+            '{
+              workspace_key: $workspace_key,
+              status: $status,
+              provider: $provider,
+              workflow_name: $workflow_name,
+              workflow_run_id: $workflow_run_id,
+              workflow_run_url: $workflow_run_url,
+              repository: $repository,
+              branch: $branch,
+              sha: $sha,
+              event_name: $event_name,
+              job_name: $job_name,
+              message: $message,
+              metadata: {
+                actor: $actor,
+                conclusion: $conclusion,
+                run_attempt: $run_attempt
+              }
+            }')
+
+          if [ -n "${MEMORY_CORE_PROJECT_KEY:-}" ]; then
+            payload=$(jq --arg project_key "${MEMORY_CORE_PROJECT_KEY}" '. + { project_key: $project_key }' <<<"${payload}")
+          fi
+
+          curl -fsS \
+            -X POST "${MEMORY_CORE_URL}/v1/ci-events" \
+            -H "Authorization: Bearer ${MEMORY_CORE_API_KEY}" \
+            -H "Content-Type: application/json" \
+            --data-binary "${payload}"

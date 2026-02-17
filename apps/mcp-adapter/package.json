@@ -1,5 +1,5 @@
 {
-  "name": "@context-sync/mcp-adapter",
+  "name": "@claustrum/mcp-adapter",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,10 +9,10 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "test": "node --import tsx --test src/git-context.test.ts"
+    "test": "node --import tsx --test src/git-context.test.ts src/context-policy.test.ts src/monorepo-detection.test.ts"
   },
   "dependencies": {
-    "@context-sync/shared": "workspace:*",
+    "@claustrum/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.26.0"
   },
   "devDependencies": {

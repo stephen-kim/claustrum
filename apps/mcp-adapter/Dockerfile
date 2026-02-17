@@ -15,8 +15,8 @@ RUN pnpm install --no-frozen-lockfile --ignore-scripts
 COPY apps/mcp-adapter apps/mcp-adapter
 COPY packages/shared packages/shared
 
-RUN pnpm --filter @context-sync/shared build
-RUN pnpm --filter @context-sync/mcp-adapter build
+RUN pnpm --filter @claustrum/shared build
+RUN pnpm --filter @claustrum/mcp-adapter build
 
 WORKDIR /workspace/apps/mcp-adapter
 CMD ["pnpm", "start"]

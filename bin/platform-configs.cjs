@@ -187,7 +187,7 @@ const PLATFORM_CONFIGS = {
       serverOverrides: {
         type: 'stdio',
         command: 'npx',
-        args: ['-y', '@context-sync/server'],
+        args: ['-y', '@claustrum/server'],
         env: {}
       }
     }
@@ -356,11 +356,11 @@ const PLATFORM_CONFIGS = {
         linux: path.join(os.homedir(), '.codex', 'config.toml')
       },
       format: 'toml',
-      tomlTableKey: 'mcp_servers.context-sync',
+      tomlTableKey: 'mcp_servers.claustrum',
       omitName: true,
       serverOverrides: {
         command: 'npx',
-        args: ['-y', '@context-sync/server']
+        args: ['-y', '@claustrum/server']
       }
     }
   },
@@ -390,7 +390,7 @@ const PLATFORM_CONFIGS = {
       },
       serverOverrides: {
         command: 'npx',
-        args: ['-y', '@context-sync/server']
+        args: ['-y', '@claustrum/server']
       }
     }
   },
@@ -419,7 +419,7 @@ const PLATFORM_CONFIGS = {
       },
       serverOverrides: {
         command: 'npx',
-        args: ['-y', '@context-sync/server']
+        args: ['-y', '@claustrum/server']
       }
     }
   },

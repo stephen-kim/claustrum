@@ -24,6 +24,12 @@ enum ResolutionKind {
   manual
 }
 
+enum MonorepoMode {
+  repo_only
+  repo_hash_subpath
+  repo_colon_subpath
+}
+
 enum ImportSource {
   codex
   claude
@@ -38,12 +44,42 @@ enum ImportStatus {
   failed
 }
 
+enum MemoryStatus {
+  draft
+  confirmed
+  rejected
+}
+
+enum MemorySource {
+  auto
+  human
+  import
+}
+
+enum RawEventType {
+  post_commit
+  post_merge
+  post_checkout
+}
+
+enum AutoExtractionMode {
+  draft_only
+  auto_confirm
+}
+
+enum SearchDefaultMode {
+  hybrid
+  keyword
+  semantic
+}
+
 enum IntegrationProvider {
   notion
   jira
   confluence
   linear
   slack
+  audit_reasoner
 }
 
 model Workspace {
@@ -59,6 +95,7 @@ model Workspace {
   projectMappings   ProjectMapping[]
   imports           ImportRecord[]
   rawSessions       RawSession[]
+  rawEvents         RawEvent[]
   auditLogs         AuditLog[]
   stagedMemories    StagedMemory[]
   integrations      WorkspaceIntegration[]
@@ -106,6 +143,7 @@ model Project {
   memories    Memory[]
   mappings    ProjectMapping[]
   rawSessions RawSession[]
+  rawEvents   RawEvent[]
   stagedMemories StagedMemory[]
 
   @@unique([workspaceId, key])
@@ -133,7 +171,13 @@ model Memory {
   projectId   String    @map("project_id")
   type        String
   content     String
+  status      MemoryStatus @default(draft)
+  source      MemorySource @default(auto)
+  confidence  Float     @default(0.0)
+  evidence    Json?
   metadata    Json?
+  embedding   Unsupported("vector")?
+  contentTsv  Unsupported("tsvector")? @map("content_tsv")
   createdBy   String    @map("created_by")
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
@@ -141,20 +185,49 @@ model Memory {
   project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId, type, createdAt(sort: Desc)])
+  @@index([projectId, createdAt(sort: Desc)])
   @@index([workspaceId, createdAt(sort: Desc)])
   @@index([createdAt(sort: Desc)])
   @@map("memories")
 }
 
 model WorkspaceSettings {
-  workspaceId        String   @id @map("workspace_id")
-  resolutionOrder    Json     @default(dbgenerated("'[\"github_remote\", \"repo_root_slug\", \"manual\"]'::jsonb")) @map("resolution_order")
-  autoCreateProject  Boolean  @default(true) @map("auto_create_project")
-  githubKeyPrefix    String   @default("github:") @map("auto_create_key_prefix")
-  localKeyPrefix     String   @default("local:") @map("auto_create_local_key_prefix")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
-  workspace          Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId                   String       @id @map("workspace_id")
+  resolutionOrder               Json         @default(dbgenerated("'[\"github_remote\", \"repo_root_slug\", \"manual\"]'::jsonb")) @map("resolution_order")
+  autoCreateProject             Boolean      @default(true) @map("auto_create_project")
+  autoCreateProjectSubprojects  Boolean      @default(true) @map("auto_create_project_subprojects")
+  autoSwitchRepo                Boolean      @default(true) @map("auto_switch_repo")
+  autoSwitchSubproject          Boolean      @default(false) @map("auto_switch_subproject")
+  allowManualPin                Boolean      @default(true) @map("allow_manual_pin")
+  enableGitEvents               Boolean      @default(true) @map("enable_git_events")
+  enableCommitEvents            Boolean      @default(true) @map("enable_commit_events")
+  enableMergeEvents             Boolean      @default(true) @map("enable_merge_events")
+  enableCheckoutEvents          Boolean      @default(false) @map("enable_checkout_events")
+  checkoutDebounceSeconds       Int          @default(30) @map("checkout_debounce_seconds")
+  checkoutDailyLimit            Int          @default(200) @map("checkout_daily_limit")
+  enableAutoExtraction          Boolean      @default(true) @map("enable_auto_extraction")
+  autoExtractionMode            AutoExtractionMode @default(draft_only) @map("auto_extraction_mode")
+  autoConfirmMinConfidence      Float        @default(0.85) @map("auto_confirm_min_confidence")
+  autoConfirmAllowedEventTypes  Json         @default(dbgenerated("'[\"post_commit\", \"post_merge\"]'::jsonb")) @map("auto_confirm_allowed_event_types")
+  autoConfirmKeywordAllowlist   Json         @default(dbgenerated("'[\"migrate\", \"switch\", \"remove\", \"deprecate\", \"rename\", \"refactor\"]'::jsonb")) @map("auto_confirm_keyword_allowlist")
+  autoConfirmKeywordDenylist    Json         @default(dbgenerated("'[\"wip\", \"tmp\", \"debug\", \"test\", \"try\"]'::jsonb")) @map("auto_confirm_keyword_denylist")
+  autoExtractionBatchSize       Int          @default(20) @map("auto_extraction_batch_size")
+  searchDefaultMode             SearchDefaultMode @default(hybrid) @map("search_default_mode")
+  searchHybridAlpha             Float        @default(0.6) @map("search_hybrid_alpha")
+  searchHybridBeta              Float        @default(0.4) @map("search_hybrid_beta")
+  searchDefaultLimit            Int          @default(20) @map("search_default_limit")
+  githubKeyPrefix               String       @default("github:") @map("auto_create_key_prefix")
+  localKeyPrefix                String       @default("local:") @map("auto_create_local_key_prefix")
+  enableMonorepoResolution      Boolean      @default(false) @map("enable_monorepo_resolution")
+  monorepoDetectionLevel        Int          @default(2) @map("monorepo_detection_level")
+  monorepoMode                  MonorepoMode @default(repo_hash_subpath) @map("monorepo_mode")
+  monorepoRootMarkers           Json         @default(dbgenerated("'[\"pnpm-workspace.yaml\", \"turbo.json\", \"nx.json\", \"lerna.json\"]'::jsonb")) @map("monorepo_root_markers")
+  monorepoWorkspaceGlobs        Json         @default(dbgenerated("'[\"apps/*\", \"packages/*\"]'::jsonb")) @map("monorepo_workspace_globs")
+  monorepoExcludeGlobs          Json         @default(dbgenerated("'[\"**/node_modules/**\", \"**/.git/**\", \"**/dist/**\", \"**/build/**\", \".next/**\"]'::jsonb")) @map("monorepo_exclude_globs")
+  monorepoMaxDepth              Int          @default(3) @map("monorepo_max_depth")
+  createdAt                     DateTime     @default(now()) @map("created_at")
+  updatedAt                     DateTime     @updatedAt @map("updated_at")
+  workspace                     Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@map("workspace_settings")
 }
@@ -266,6 +339,29 @@ model StagedMemory {
   @@index([importId, createdAt(sort: Desc)])
   @@index([workspaceId, createdAt(sort: Desc)])
   @@map("staged_memories")
+}
+
+model RawEvent {
+  id            String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId   String       @map("workspace_id")
+  projectId     String       @map("project_id")
+  eventType     RawEventType @map("event_type")
+  repoKey       String       @map("repo_key")
+  subprojectKey String?      @map("subproject_key")
+  branch        String?
+  fromBranch    String?      @map("from_branch")
+  toBranch      String?      @map("to_branch")
+  commitSha     String?      @map("commit_sha")
+  commitMessage String?      @map("commit_message")
+  changedFiles  Json?        @map("changed_files")
+  metadata      Json?
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  workspace     Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project       Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId, eventType, createdAt(sort: Desc)])
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@map("raw_events")
 }
 
 model AuditLog {

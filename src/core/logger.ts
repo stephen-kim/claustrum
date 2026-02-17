@@ -28,7 +28,7 @@ function write(level: LogLevel, message: string, ...args: unknown[]): void {
   if (!shouldLog(level)) {
     return;
   }
-  const line = `[context-sync:${level}] ${message}`;
+  const line = `[claustrum:${level}] ${message}`;
   if (args.length > 0) {
     console.error(line, ...args);
     return;

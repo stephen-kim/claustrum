@@ -23,11 +23,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - image_name: context-sync-memory-core
+          - image_name: claustrum-memory-core
             dockerfile: apps/memory-core/Dockerfile
-          - image_name: context-sync-mcp-adapter
+          - image_name: claustrum-mcp-adapter
             dockerfile: apps/mcp-adapter/Dockerfile
-          - image_name: context-sync-admin-ui
+          - image_name: claustrum-admin-ui
             dockerfile: apps/admin-ui/Dockerfile
     steps:
       - name: Checkout

@@ -49,9 +49,9 @@ Recommended setup:
 - `docker-compose.dev.yml`: source-build local development
 - Optional image overrides: `MEMORY_CORE_IMAGE`, `MCP_ADAPTER_IMAGE`, `ADMIN_UI_IMAGE`
 - Default images:
-  - `ghcr.io/stephen-kim/context-sync-memory-core:latest`
-  - `ghcr.io/stephen-kim/context-sync-mcp-adapter:latest`
-  - `ghcr.io/stephen-kim/context-sync-admin-ui:latest`
+  - `ghcr.io/stephen-kim/claustrum-memory-core:latest`
+  - `ghcr.io/stephen-kim/claustrum-mcp-adapter:latest`
+  - `ghcr.io/stephen-kim/claustrum-admin-ui:latest`
 
 
 ## Local Development (source-build containers)
@@ -114,7 +114,7 @@ docker compose up -d
 ```toml
 [mcp_servers.memory-core]
 command = "pnpm"
-args = ["--filter", "@context-sync/mcp-adapter", "start"]
+args = ["--filter", "@claustrum/mcp-adapter", "start"]
 
 [mcp_servers.memory-core.env]
 MEMORY_CORE_URL = "http://127.0.0.1:8080"

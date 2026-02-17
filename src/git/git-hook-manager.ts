@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 
-const HOOK_MARKER = '# Context Sync Auto-Hook';
+const HOOK_MARKER = '# Claustrum Auto-Hook';
 const MANAGED_HOOKS = ['post-commit', 'post-merge', 'post-checkout'] as const;
 
 export class GitHookManager {

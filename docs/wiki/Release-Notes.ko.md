@@ -33,6 +33,9 @@
 - 프로젝트 자동 선택(resolver) + key 기반 스코프 모델 강화
 - 기본 recall은 memories-only 유지
 - raw 검색은 snippet-only + 길이 제한 + 감사 로그 적용
+- `audit_reasoner` 연동 추가 (비동기 AI 감사 사유 생성)
+  - Provider: OpenAI 또는 Gemini
+  - 우선순위: `ENV > Admin UI` 워크스페이스 설정
 
 
 ### MCP 호환성

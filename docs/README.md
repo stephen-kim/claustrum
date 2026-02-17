@@ -3,6 +3,7 @@
 This repository now keeps detailed documentation in `docs/wiki/`.
 
 Primary sources:
+- `docs/architecture.md`
 - `docs/wiki/Home.md`
 - `docs/wiki/Installation.md`
 - `docs/wiki/Operations.md`

@@ -1,4 +1,4 @@
-import type { ResolutionKind } from './types';
+import type { MonorepoMode, ResolutionKind } from './types';
 
 export function toISOString(localDateTime: string): string | null {
   const date = new Date(localDateTime);
@@ -32,4 +32,21 @@ export function kindDescription(kind: ResolutionKind): string {
     return 'repo root basename slug로 매핑';
   }
   return '사용자 지정 manual project key 선택';
+}
+
+export function monorepoModeDescription(mode: MonorepoMode): string {
+  if (mode === 'repo_only') {
+    return '항상 repo 단위 key만 사용';
+  }
+  if (mode === 'repo_colon_subpath') {
+    return 'repo_key:subpath 형식으로 subproject 분리';
+  }
+  return 'repo_key#subpath 형식으로 subproject 분리';
+}
+
+export function isSubprojectKey(projectKey: string): boolean {
+  if (projectKey.includes('#')) {
+    return true;
+  }
+  return /^github:[^:]+\/[^:]+:.+/.test(projectKey);
 }

@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Claustrum mark">
+  <defs>
+    <!-- Background -->
+    <radialGradient id="bg" cx="50%" cy="45%" r="75%">
+      <stop offset="0%" stop-color="#0B1730"/>
+      <stop offset="100%" stop-color="#060C1A"/>
+    </radialGradient>
+
+    <!-- Logo gradient -->
+    <linearGradient id="grad" x1="18%" y1="50%" x2="82%" y2="50%">
+      <stop offset="0%" stop-color="#3BA7FF"/>
+      <stop offset="55%" stop-color="#48E1D2"/>
+      <stop offset="100%" stop-color="#7BE35A"/>
+    </linearGradient>
+
+    <!-- Soft glow -->
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feColorMatrix in="b" type="matrix"
+        values="
+          1 0 0 0 0
+          0 1 0 0 0
+          0 0 1 0 0
+          0 0 0 .35 0" result="g"/>
+      <feMerge>
+        <feMergeNode in="g"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Mask to carve the C opening -->
+    <mask id="cCut">
+      <rect width="1024" height="1024" fill="#fff"/>
+      <!-- carve right-side opening -->
+      <rect x="640" y="360" width="260" height="304" rx="152" fill="#000"/>
+    </mask>
+  </defs>
+
+  <!-- Background (remove if you want transparent) -->
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+
+  <!-- Group: mark -->
+  <g filter="url(#glow)" transform="translate(0,0)">
+    <!-- Main C ring -->
+    <circle cx="512" cy="512" r="220"
+      fill="none"
+      stroke="url(#grad)"
+      stroke-width="96"
+      stroke-linecap="round"
+      mask="url(#cCut)"/>
+
+    <!-- Inner split (vertical gap look) -->
+    <g stroke="url(#grad)" stroke-linecap="round">
+      <line x1="512" y1="292" x2="512" y2="360" stroke-width="26"/>
+      <line x1="512" y1="664" x2="512" y2="732" stroke-width="26"/>
+    </g>
+
+    <!-- Network lines + nodes (simplified but matches the style) -->
+    <g stroke="url(#grad)" stroke-linecap="round" stroke-width="18" fill="url(#grad)">
+      <!-- LEFT main trunk -->
+      <line x1="330" y1="512" x2="220" y2="512"/>
+      <circle cx="190" cy="512" r="22"/>
+
+      <!-- LEFT upper branch -->
+      <line x1="360" y1="430" x2="270" y2="385"/>
+      <circle cx="245" cy="372" r="18"/>
+
+      <line x1="300" y1="460" x2="255" y2="445"/>
+      <circle cx="235" cy="438" r="14"/>
+
+      <!-- LEFT lower branch -->
+      <line x1="360" y1="594" x2="270" y2="639"/>
+      <circle cx="245" cy="652" r="18"/>
+
+      <line x1="300" y1="564" x2="255" y2="579"/>
+      <circle cx="235" cy="586" r="14"/>
+
+      <!-- LEFT small outer nodes (top/bottom) -->
+      <line x1="410" y1="395" x2="360" y2="360"/>
+      <circle cx="345" cy="350" r="16"/>
+
+      <line x1="410" y1="629" x2="360" y2="664"/>
+      <circle cx="345" cy="674" r="16"/>
+
+      <!-- RIGHT main trunk -->
+      <line x1="694" y1="512" x2="805" y2="512"/>
+      <circle cx="835" cy="512" r="22"/>
+
+      <!-- RIGHT upper branch -->
+      <line x1="664" y1="430" x2="754" y2="385"/>
+      <circle cx="779" cy="372" r="18"/>
+
+      <line x1="724" y1="460" x2="769" y2="445"/>
+      <circle cx="789" cy="438" r="14"/>
+
+      <!-- RIGHT lower branch -->
+      <line x1="664" y1="594" x2="754" y2="639"/>
+      <circle cx="779" cy="652" r="18"/>
+
+      <line x1="724" y1="564" x2="769" y2="579"/>
+      <circle cx="789" cy="586" r="14"/>
+
+      <!-- RIGHT small outer nodes (top/bottom) -->
+      <line x1="614" y1="395" x2="664" y2="360"/>
+      <circle cx="679" cy="350" r="16"/>
+
+      <line x1="614" y1="629" x2="664" y2="664"/>
+      <circle cx="679" cy="674" r="16"/>
+    </g>
+  </g>
+</svg>

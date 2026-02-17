@@ -1,4 +1,4 @@
-import type { Logger } from './logger.js';
+import type { Logger } from '../logger.js';
 
 type AuditEvent = {
   workspaceId: string;
@@ -197,6 +197,9 @@ export class SlackAuditNotifier {
       return 'medium';
     }
     if (event.action.startsWith('git.')) {
+      return 'medium';
+    }
+    if (event.action.startsWith('ci.')) {
       return 'medium';
     }
     if (event.action.endsWith('.write')) {

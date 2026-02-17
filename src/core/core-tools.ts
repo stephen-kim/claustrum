@@ -25,7 +25,7 @@ export const CORE_TOOLS = [
         },
         enable_git_hooks: {
           type: 'boolean',
-          description: 'Optional. Default false. When true, installs Context Sync git hooks in the current repository. If MEMORY_CORE_URL/API_KEY/WORKSPACE_KEY are set, hook events are forwarded to memory-core audit logs.'
+          description: 'Optional. Default false. When true, installs Claustrum git hooks in the current repository. If MEMORY_CORE_URL/API_KEY/WORKSPACE_KEY are set, hook events are forwarded to memory-core audit logs.'
         }
       },
       required: ['key']
@@ -88,7 +88,7 @@ remember(
  Made changes but didn't run build/test  CAVEAT (unverified)
  Used workaround instead of proper fix  CAVEAT (shortcut)
 
-**This makes Context Sync the FIRST tool to track AI mistakes as technical context!**
+**This makes Claustrum the FIRST tool to track AI mistakes as technical context!**
 
 **Command Language:** Users may say "cs remember" (git-style command). When they do, analyze the conversation and save relevant context.
 
@@ -112,7 +112,7 @@ When the user says "cs remember" or "remember this conversation" WITHOUT specify
 
 **Example Checkpoint Analysis:**
 If conversation discusses "building the TypeScript server with 8 core tools, tested successfully via MCP":
-- Call remember(type="active_work", content="Building Context Sync server with 8 core tools (set_project, remember, recall, etc.)", metadata={files: ["src/server.ts", "src/core-tools.ts"]})
+- Call remember(type="active_work", content="Building Claustrum server with 8 core tools (set_project, remember, recall, etc.)", metadata={files: ["src/server.ts", "src/core-tools.ts"]})
 - Call remember(type="decision", content="Reduced from 50+ tools to 8 core tools, moved rest to internal utilities for simplicity", metadata={reasoning: "Users overwhelmed by too many tools"})
 - Call remember(type="active_work", content="Testing implementation via MCP protocol in Cursor", metadata={status: "All 8 tools tested successfully"})
 

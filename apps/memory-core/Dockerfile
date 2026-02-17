@@ -15,8 +15,8 @@ RUN pnpm install --no-frozen-lockfile --ignore-scripts
 COPY apps/memory-core apps/memory-core
 COPY packages/shared packages/shared
 
-RUN pnpm --filter @context-sync/shared build
-RUN pnpm --filter @context-sync/memory-core build
+RUN pnpm --filter @claustrum/shared build
+RUN pnpm --filter @claustrum/memory-core build
 
 WORKDIR /workspace/apps/memory-core
 CMD ["pnpm", "start:http"]

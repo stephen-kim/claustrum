@@ -4,6 +4,7 @@ import {
   ImportSource,
   ImportStatus,
   ProjectRole,
+  RawEventType,
   ResolutionKind,
   WorkspaceRole,
   type PrismaClient,
@@ -12,28 +13,28 @@ import {
   createMemorySchema,
   createProjectMappingSchema,
   createProjectSchema,
+  memorySourceSchema,
+  memoryStatusSchema,
   memoryTypeSchema,
   resolveProjectSchema,
-  resolutionOrderSchema,
   updateProjectMappingSchema,
   workspaceSettingsSchema,
   type ListMemoriesQuery,
-  type ResolveProjectInput,
-} from '@context-sync/shared';
+} from '@claustrum/shared';
 import type { AuthContext } from './auth.js';
-import { hasProjectAccess, requireWorkspaceMembership } from './permissions.js';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { NotionClientAdapter } from './notion-client.js';
-import { JiraClientAdapter } from './jira-client.js';
-import { ConfluenceClientAdapter } from './confluence-client.js';
-import { LinearClientAdapter } from './linear-client.js';
+import { NotionClientAdapter } from './integrations/notion-client.js';
+import { JiraClientAdapter } from './integrations/jira-client.js';
+import { ConfluenceClientAdapter } from './integrations/confluence-client.js';
+import { LinearClientAdapter } from './integrations/linear-client.js';
 import type {
   SlackAuditNotifier,
   SlackDeliveryConfig,
-} from './audit-slack-notifier.js';
+} from './integrations/audit-slack-notifier.js';
+import { AuditReasoner } from './integrations/audit-reasoner.js';
 import {
   buildStagedCandidate,
   createMemorySnippet,
@@ -57,43 +58,26 @@ import {
   buildGitAutoWriteTitle,
   shouldAutoWriteForGitEvent,
 } from './service/git-autowrite-utils.js';
+import {
+  assertProjectAccess,
+  assertRawAccess,
+  assertWorkspaceAccess,
+  assertWorkspaceAdmin,
+  isWorkspaceAdminRole,
+} from './service/access-control.js';
+import { getEffectiveAuditReasonerConfig, getEnvAuditReasonerConfigAsJson, hasEnvAuditReasonerPreference, type AuditReasonerEnvConfig } from './service/audit-reasoner-config.js';
+import { AuthorizationError, NotFoundError, ValidationError } from './service/errors.js';
+import {
+  buildGithubExternalIdCandidates,
+  composeMonorepoProjectKey,
+  getEffectiveWorkspaceSettings,
+  normalizeGithubSelector,
+  parseResolutionOrder,
+  resolveMonorepoSubpath,
+  toGithubMappingExternalId,
+} from './service/workspace-resolution.js';
 
-const DEFAULT_RESOLUTION_ORDER: ResolutionKind[] = [
-  ResolutionKind.github_remote,
-  ResolutionKind.repo_root_slug,
-  ResolutionKind.manual,
-];
-
-const DEFAULT_GITHUB_PREFIX = 'github:';
-const DEFAULT_LOCAL_PREFIX = 'local:';
-
-type EffectiveWorkspaceSettings = {
-  resolutionOrder: ResolutionKind[];
-  autoCreateProject: boolean;
-  githubKeyPrefix: string;
-  localKeyPrefix: string;
-};
-
-export class AuthorizationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'AuthorizationError';
-  }
-}
-
-export class NotFoundError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'NotFoundError';
-  }
-}
-
-export class ValidationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ValidationError';
-  }
-}
+export { AuthorizationError, NotFoundError, ValidationError } from './service/errors.js';
 
 export class MemoryCoreService {
   constructor(
@@ -104,7 +88,14 @@ export class MemoryCoreService {
     private readonly confluenceClient?: ConfluenceClientAdapter,
     private readonly linearClient?: LinearClientAdapter,
     private readonly auditSlackNotifier?: SlackAuditNotifier,
-    private readonly integrationLockedProviders: ReadonlySet<IntegrationProvider> = new Set()
+    private readonly auditReasoner?: AuditReasoner,
+    private readonly integrationLockedProviders: ReadonlySet<IntegrationProvider> = new Set(),
+    private readonly auditReasonerEnvConfig: AuditReasonerEnvConfig = {
+      enabled: false,
+      preferEnv: false,
+      providerOrder: [],
+      providers: {},
+    }
   ) {}
 
   async selectSession(args: {
@@ -113,7 +104,7 @@ export class MemoryCoreService {
     projectKey: string;
   }): Promise<{ workspace_key: string; project_key: string; ok: true }> {
     const project = await this.getProjectByKeys(args.workspaceKey, args.projectKey);
-    await this.assertProjectAccess(args.auth, project.workspaceId, project.id);
+    await assertProjectAccess(this.prisma, args.auth, project.workspaceId, project.id);
     return { workspace_key: args.workspaceKey, project_key: args.projectKey, ok: true };
   }
 
@@ -134,29 +125,108 @@ export class MemoryCoreService {
 
     const input = parsed.data;
     const workspace = await this.getWorkspaceByKey(input.workspace_key);
-    await this.assertWorkspaceAccess(args.auth, workspace.id);
-    const settings = await this.getEffectiveWorkspaceSettings(workspace.id);
+    await assertWorkspaceAccess(this.prisma, args.auth, workspace.id);
+    const settings = await getEffectiveWorkspaceSettings(this.prisma, workspace.id);
 
     for (const kind of settings.resolutionOrder) {
       if (kind === ResolutionKind.github_remote) {
-        const github = this.normalizeGithubSelector(input);
+        const github = normalizeGithubSelector(input);
         if (!github) {
           continue;
         }
-        const externalCandidates = github.withHost
-          ? [github.normalized, github.withHost]
-          : [github.normalized];
+        const monorepoEnabled =
+          settings.enableMonorepoResolution && input.monorepo?.enabled !== false;
+        const monorepoSubpath = monorepoEnabled
+          ? resolveMonorepoSubpath(input, {
+              monorepoMode: settings.monorepoMode,
+              monorepoWorkspaceGlobs: settings.monorepoWorkspaceGlobs,
+              monorepoMaxDepth: settings.monorepoMaxDepth,
+            })
+          : null;
+        const repoExternalCandidates = buildGithubExternalIdCandidates(github, null);
+        const subprojectExternalCandidates = monorepoSubpath
+          ? buildGithubExternalIdCandidates(github, monorepoSubpath, { includeBase: false })
+          : [];
+
+        const subprojectMapping = monorepoSubpath
+          ? await this.prisma.projectMapping.findFirst({
+              where: {
+                workspaceId: workspace.id,
+                kind: ResolutionKind.github_remote,
+                externalId: { in: subprojectExternalCandidates },
+                isEnabled: true,
+              },
+              orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
+              include: { project: true },
+            })
+          : null;
+        if (subprojectMapping) {
+          await assertProjectAccess(
+            this.prisma,
+            args.auth,
+            subprojectMapping.project.workspaceId,
+            subprojectMapping.project.id
+          );
+          return {
+            workspace_key: workspace.key,
+            project: {
+              key: subprojectMapping.project.key,
+              id: subprojectMapping.project.id,
+              name: subprojectMapping.project.name,
+            },
+            resolution: ResolutionKind.github_remote,
+            matched_mapping_id: subprojectMapping.id,
+          };
+        }
+
         const mapping = await this.prisma.projectMapping.findFirst({
           where: {
             workspaceId: workspace.id,
             kind: ResolutionKind.github_remote,
-            externalId: { in: externalCandidates },
+            externalId: { in: repoExternalCandidates },
             isEnabled: true,
           },
           orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
           include: { project: true },
         });
+        if (
+          mapping &&
+          monorepoSubpath &&
+          settings.autoCreateProject &&
+          settings.autoCreateProjectSubprojects
+        ) {
+          const projectKey = composeMonorepoProjectKey(
+            mapping.project.key,
+            monorepoSubpath,
+            settings.monorepoMode
+          );
+          const createdSubproject = await this.createProjectAndMapping({
+            workspaceId: workspace.id,
+            kind: ResolutionKind.github_remote,
+            externalId: toGithubMappingExternalId(github.normalized, monorepoSubpath),
+            projectKey,
+            projectName: `${mapping.project.name} / ${monorepoSubpath}`,
+          });
+          await assertProjectAccess(
+            this.prisma,
+            args.auth,
+            workspace.id,
+            createdSubproject.project.id
+          );
+          return {
+            workspace_key: workspace.key,
+            project: {
+              key: createdSubproject.project.key,
+              id: createdSubproject.project.id,
+              name: createdSubproject.project.name,
+            },
+            resolution: ResolutionKind.github_remote,
+            matched_mapping_id: createdSubproject.mapping.id,
+            created: createdSubproject.created,
+          };
+        }
         if (mapping) {
+          await assertProjectAccess(this.prisma, args.auth, mapping.project.workspaceId, mapping.project.id);
           return {
             workspace_key: workspace.key,
             project: {
@@ -170,23 +240,50 @@ export class MemoryCoreService {
         }
 
         if (settings.autoCreateProject) {
-          const created = await this.createProjectAndMapping({
+          const repoProject = await this.createProjectAndMapping({
             workspaceId: workspace.id,
             kind: ResolutionKind.github_remote,
-            externalId: github.normalized,
+            externalId: toGithubMappingExternalId(github.normalized),
             projectKey: `${settings.githubKeyPrefix}${github.normalized}`,
             projectName: github.normalized,
           });
+          if (monorepoSubpath && settings.autoCreateProjectSubprojects) {
+            const subprojectKey = composeMonorepoProjectKey(
+              repoProject.project.key,
+              monorepoSubpath,
+              settings.monorepoMode
+            );
+            const subproject = await this.createProjectAndMapping({
+              workspaceId: workspace.id,
+              kind: ResolutionKind.github_remote,
+              externalId: toGithubMappingExternalId(github.normalized, monorepoSubpath),
+              projectKey: subprojectKey,
+              projectName: `${github.normalized} / ${monorepoSubpath}`,
+            });
+            await assertProjectAccess(this.prisma, args.auth, workspace.id, subproject.project.id);
+            return {
+              workspace_key: workspace.key,
+              project: {
+                key: subproject.project.key,
+                id: subproject.project.id,
+                name: subproject.project.name,
+              },
+              resolution: ResolutionKind.github_remote,
+              matched_mapping_id: subproject.mapping.id,
+              created: subproject.created || repoProject.created,
+            };
+          }
+          await assertProjectAccess(this.prisma, args.auth, workspace.id, repoProject.project.id);
           return {
             workspace_key: workspace.key,
             project: {
-              key: created.project.key,
-              id: created.project.id,
-              name: created.project.name,
+              key: repoProject.project.key,
+              id: repoProject.project.id,
+              name: repoProject.project.name,
             },
             resolution: ResolutionKind.github_remote,
-            matched_mapping_id: created.mapping.id,
-            created: created.created,
+            matched_mapping_id: repoProject.mapping.id,
+            created: repoProject.created,
           };
         }
       }
@@ -208,6 +305,7 @@ export class MemoryCoreService {
           include: { project: true },
         });
         if (mapping) {
+          await assertProjectAccess(this.prisma, args.auth, mapping.project.workspaceId, mapping.project.id);
           return {
             workspace_key: workspace.key,
             project: {
@@ -228,6 +326,7 @@ export class MemoryCoreService {
             projectKey: `${settings.localKeyPrefix}${slug}`,
             projectName: slug,
           });
+          await assertProjectAccess(this.prisma, args.auth, workspace.id, created.project.id);
           return {
             workspace_key: workspace.key,
             project: {
@@ -258,7 +357,7 @@ export class MemoryCoreService {
         if (!project) {
           throw new NotFoundError(`Project not found for manual selection: ${manualKey}`);
         }
-        await this.assertProjectAccess(args.auth, workspace.id, project.id);
+        await assertProjectAccess(this.prisma, args.auth, workspace.id, project.id);
         const mapping = await this.ensureProjectMapping({
           workspaceId: workspace.id,
           projectId: project.id,
@@ -283,11 +382,11 @@ export class MemoryCoreService {
 
   async listProjects(args: { auth: AuthContext; workspaceKey: string }) {
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    const membership = await this.assertWorkspaceAccess(args.auth, workspace.id);
+    const membership = await assertWorkspaceAccess(this.prisma, args.auth, workspace.id);
     const projectScope =
       args.auth.projectAccessBypass ||
       args.auth.user.envAdmin ||
-      this.isWorkspaceAdmin(membership.role)
+      isWorkspaceAdminRole(membership.role)
         ? {
             workspaceId: workspace.id,
           }
@@ -325,7 +424,7 @@ export class MemoryCoreService {
     }
 
     const workspace = await this.getWorkspaceByKey(parsed.data.workspace_key);
-    await this.assertWorkspaceAdmin(args.auth, workspace.id);
+    await assertWorkspaceAdmin(this.prisma, args.auth, workspace.id);
 
     const project = await this.prisma.project.upsert({
       where: {
@@ -371,14 +470,21 @@ export class MemoryCoreService {
     }
 
     const project = await this.getProjectByKeys(parsed.data.workspace_key, parsed.data.project_key);
-    await this.assertProjectAccess(args.auth, project.workspaceId, project.id);
+    await assertProjectAccess(this.prisma, args.auth, project.workspaceId, project.id);
 
-    return this.prisma.memory.create({
+    const created = await this.prisma.memory.create({
       data: {
         workspaceId: project.workspaceId,
         projectId: project.id,
         type: parsed.data.type,
         content: parsed.data.content,
+        status: parsed.data.status ? memoryStatusSchema.parse(parsed.data.status) : undefined,
+        source: parsed.data.source ? memorySourceSchema.parse(parsed.data.source) : undefined,
+        confidence:
+          typeof parsed.data.confidence === 'number'
+            ? Math.min(Math.max(parsed.data.confidence, 0), 1)
+            : undefined,
+        evidence: (parsed.data.evidence as Prisma.InputJsonValue | undefined) ?? undefined,
         metadata: (parsed.data.metadata as Prisma.InputJsonValue | undefined) ?? undefined,
         createdBy: args.auth.user.id,
       },
@@ -386,6 +492,10 @@ export class MemoryCoreService {
         id: true,
         type: true,
         content: true,
+        status: true,
+        source: true,
+        confidence: true,
+        evidence: true,
         metadata: true,
         createdBy: true,
         createdAt: true,
@@ -399,32 +509,49 @@ export class MemoryCoreService {
         },
       },
     });
+    await this.updateMemoryEmbedding(created.id, created.content);
+    return created;
   }
 
   async listMemories(args: { auth: AuthContext; query: ListMemoriesQuery }) {
-    const limit = Math.min(Math.max(args.query.limit || 20, 1), 200);
     const workspace = await this.getWorkspaceByKey(args.query.workspace_key);
-    const membership = await this.assertWorkspaceAccess(args.auth, workspace.id);
+    const settings = await getEffectiveWorkspaceSettings(this.prisma, workspace.id);
+    const defaultLimit = Math.min(Math.max(settings.searchDefaultLimit || 20, 1), 500);
+    const limit = Math.min(Math.max(args.query.limit || defaultLimit, 1), 500);
+    const membership = await assertWorkspaceAccess(this.prisma, args.auth, workspace.id);
 
     let projectId: string | undefined;
     if (args.query.project_key) {
       const project = await this.getProjectByKeys(args.query.workspace_key, args.query.project_key);
-      await this.assertProjectAccess(args.auth, project.workspaceId, project.id);
+      await assertProjectAccess(this.prisma, args.auth, project.workspaceId, project.id);
       projectId = project.id;
     }
 
     const type = args.query.type ? memoryTypeSchema.parse(args.query.type) : undefined;
+    const status = args.query.status ? memoryStatusSchema.parse(args.query.status) : undefined;
+    const source = args.query.source ? memorySourceSchema.parse(args.query.source) : undefined;
+    const confidenceMin =
+      typeof args.query.confidence_min === 'number'
+        ? Math.min(Math.max(args.query.confidence_min, 0), 1)
+        : undefined;
+    const confidenceMax =
+      typeof args.query.confidence_max === 'number'
+        ? Math.min(Math.max(args.query.confidence_max, 0), 1)
+        : undefined;
 
     const where: Prisma.MemoryWhereInput = {};
+    let allowedProjectIds: string[] | null = null;
     if (projectId) {
       where.projectId = projectId;
       where.workspaceId = workspace.id;
+      allowedProjectIds = [projectId];
     } else if (
       args.auth.projectAccessBypass ||
       args.auth.user.envAdmin ||
-      this.isWorkspaceAdmin(membership.role)
+      isWorkspaceAdminRole(membership.role)
     ) {
       where.workspaceId = workspace.id;
+      allowedProjectIds = null;
     } else {
       const memberships = await this.prisma.projectMember.findMany({
         where: {
@@ -443,30 +570,134 @@ export class MemoryCoreService {
       }
       where.workspaceId = workspace.id;
       where.projectId = { in: projectIds };
+      allowedProjectIds = projectIds;
     }
     if (type) {
       where.type = type;
+    }
+    if (status) {
+      where.status = status;
+    }
+    if (source) {
+      where.source = source;
+    }
+    if (confidenceMin !== undefined || confidenceMax !== undefined) {
+      where.confidence = {
+        gte: confidenceMin,
+        lte: confidenceMax,
+      };
     }
     if (args.query.since) {
       where.createdAt = {
         gte: new Date(args.query.since),
       };
     }
-    if (args.query.q) {
-      where.content = {
-        contains: args.query.q,
-        mode: 'insensitive',
-      };
+    const mode = (args.query.mode ||
+      settings.searchDefaultMode ||
+      'hybrid') as 'hybrid' | 'keyword' | 'semantic';
+    const q = (args.query.q || '').trim();
+    if (!q) {
+      return this.prisma.memory.findMany({
+        where,
+        orderBy: [{ createdAt: 'desc' }],
+        take: limit,
+        select: {
+          id: true,
+          type: true,
+          content: true,
+          status: true,
+          source: true,
+          confidence: true,
+          evidence: true,
+          metadata: true,
+          createdBy: true,
+          createdAt: true,
+          project: {
+            select: {
+              key: true,
+              name: true,
+              workspace: {
+                select: {
+                  key: true,
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+      });
     }
 
-    return this.prisma.memory.findMany({
-      where,
-      orderBy: [{ createdAt: 'desc' }],
-      take: limit,
+    const keywordCandidates = await this.searchMemoryCandidateScores({
+      workspaceId: workspace.id,
+      q,
+      projectIds: allowedProjectIds,
+      type,
+      status,
+      source,
+      since: args.query.since,
+      confidenceMin,
+      confidenceMax,
+      limit: Math.max(limit * 10, 200),
+      mode: 'keyword',
+    });
+    let rankedIds: string[] = [];
+    if (mode === 'keyword') {
+      rankedIds = keywordCandidates
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit)
+        .map((item) => item.id);
+    } else {
+      const semanticCandidates = await this.searchMemoryCandidateScores({
+        workspaceId: workspace.id,
+        q,
+        projectIds: allowedProjectIds,
+        type,
+        status,
+        source,
+        since: args.query.since,
+        confidenceMin,
+        confidenceMax,
+        limit: Math.max(limit * 10, 200),
+        mode: 'semantic',
+      });
+      if (mode === 'semantic') {
+        rankedIds = semanticCandidates
+          .sort((a, b) => b.score - a.score)
+          .slice(0, limit)
+          .map((item) => item.id);
+      } else {
+        const combined = new Map<string, number>();
+        for (const candidate of keywordCandidates) {
+          combined.set(candidate.id, (combined.get(candidate.id) || 0) + settings.searchHybridBeta * candidate.score);
+        }
+        for (const candidate of semanticCandidates) {
+          combined.set(
+            candidate.id,
+            (combined.get(candidate.id) || 0) + settings.searchHybridAlpha * candidate.score
+          );
+        }
+        rankedIds = [...combined.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, limit)
+          .map(([id]) => id);
+      }
+    }
+    if (rankedIds.length === 0) {
+      return [];
+    }
+    const rows = await this.prisma.memory.findMany({
+      where: {
+        id: { in: rankedIds },
+      },
       select: {
         id: true,
         type: true,
         content: true,
+        status: true,
+        source: true,
+        confidence: true,
+        evidence: true,
         metadata: true,
         createdBy: true,
         createdAt: true,
@@ -484,6 +715,8 @@ export class MemoryCoreService {
         },
       },
     });
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    return rankedIds.map((id) => byId.get(id)).filter(Boolean);
   }
 
   async listWorkspaces(args: { auth: AuthContext }) {
@@ -565,7 +798,7 @@ export class MemoryCoreService {
     role: ProjectRole;
   }) {
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    await this.assertWorkspaceAdmin(args.auth, workspace.id);
+    await assertWorkspaceAdmin(this.prisma, args.auth, workspace.id);
     const project = await this.getProjectByKeys(args.workspaceKey, args.projectKey);
 
     const user = await this.prisma.user.findUnique({
@@ -618,7 +851,7 @@ export class MemoryCoreService {
     projectKey: string;
   }) {
     const project = await this.getProjectByKeys(args.workspaceKey, args.projectKey);
-    await this.assertProjectAccess(args.auth, project.workspaceId, project.id);
+    await assertProjectAccess(this.prisma, args.auth, project.workspaceId, project.id);
 
     return this.prisma.projectMember.findMany({
       where: { projectId: project.id },
@@ -631,14 +864,42 @@ export class MemoryCoreService {
 
   async getWorkspaceSettings(args: { auth: AuthContext; workspaceKey: string }) {
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    await this.assertWorkspaceAccess(args.auth, workspace.id);
-    const effective = await this.getEffectiveWorkspaceSettings(workspace.id);
+    await assertWorkspaceAccess(this.prisma, args.auth, workspace.id);
+    const effective = await getEffectiveWorkspaceSettings(this.prisma, workspace.id);
     return {
       workspace_key: workspace.key,
       resolution_order: effective.resolutionOrder,
       auto_create_project: effective.autoCreateProject,
+      auto_create_project_subprojects: effective.autoCreateProjectSubprojects,
+      auto_switch_repo: effective.autoSwitchRepo,
+      auto_switch_subproject: effective.autoSwitchSubproject,
+      allow_manual_pin: effective.allowManualPin,
+      enable_git_events: effective.enableGitEvents,
+      enable_commit_events: effective.enableCommitEvents,
+      enable_merge_events: effective.enableMergeEvents,
+      enable_checkout_events: effective.enableCheckoutEvents,
+      checkout_debounce_seconds: effective.checkoutDebounceSeconds,
+      checkout_daily_limit: effective.checkoutDailyLimit,
+      enable_auto_extraction: effective.enableAutoExtraction,
+      auto_extraction_mode: effective.autoExtractionMode,
+      auto_confirm_min_confidence: effective.autoConfirmMinConfidence,
+      auto_confirm_allowed_event_types: effective.autoConfirmAllowedEventTypes,
+      auto_confirm_keyword_allowlist: effective.autoConfirmKeywordAllowlist,
+      auto_confirm_keyword_denylist: effective.autoConfirmKeywordDenylist,
+      auto_extraction_batch_size: effective.autoExtractionBatchSize,
+      search_default_mode: effective.searchDefaultMode,
+      search_hybrid_alpha: effective.searchHybridAlpha,
+      search_hybrid_beta: effective.searchHybridBeta,
+      search_default_limit: effective.searchDefaultLimit,
       github_key_prefix: effective.githubKeyPrefix,
       local_key_prefix: effective.localKeyPrefix,
+      enable_monorepo_resolution: effective.enableMonorepoResolution,
+      monorepo_detection_level: effective.monorepoDetectionLevel,
+      monorepo_mode: effective.monorepoMode,
+      monorepo_root_markers: effective.monorepoRootMarkers,
+      monorepo_workspace_globs: effective.monorepoWorkspaceGlobs,
+      monorepo_exclude_globs: effective.monorepoExcludeGlobs,
+      monorepo_max_depth: effective.monorepoMaxDepth,
     };
   }
 
@@ -648,16 +909,57 @@ export class MemoryCoreService {
     input: unknown;
   }) {
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    await this.assertWorkspaceAdmin(args.auth, workspace.id);
-    const current = await this.getEffectiveWorkspaceSettings(workspace.id);
+    await assertWorkspaceAdmin(this.prisma, args.auth, workspace.id);
+    const current = await getEffectiveWorkspaceSettings(this.prisma, workspace.id);
     const rawInput = (args.input || {}) as Record<string, unknown>;
     const reason = normalizeReason(rawInput.reason);
     const parsed = workspaceSettingsSchema.safeParse({
       workspace_key: args.workspaceKey,
       resolution_order: rawInput.resolution_order ?? current.resolutionOrder,
       auto_create_project: rawInput.auto_create_project ?? current.autoCreateProject,
+      auto_create_project_subprojects:
+        rawInput.auto_create_project_subprojects ?? current.autoCreateProjectSubprojects,
+      auto_switch_repo: rawInput.auto_switch_repo ?? current.autoSwitchRepo,
+      auto_switch_subproject:
+        rawInput.auto_switch_subproject ?? current.autoSwitchSubproject,
+      allow_manual_pin: rawInput.allow_manual_pin ?? current.allowManualPin,
+      enable_git_events: rawInput.enable_git_events ?? current.enableGitEvents,
+      enable_commit_events: rawInput.enable_commit_events ?? current.enableCommitEvents,
+      enable_merge_events: rawInput.enable_merge_events ?? current.enableMergeEvents,
+      enable_checkout_events: rawInput.enable_checkout_events ?? current.enableCheckoutEvents,
+      checkout_debounce_seconds:
+        rawInput.checkout_debounce_seconds ?? current.checkoutDebounceSeconds,
+      checkout_daily_limit: rawInput.checkout_daily_limit ?? current.checkoutDailyLimit,
+      enable_auto_extraction:
+        rawInput.enable_auto_extraction ?? current.enableAutoExtraction,
+      auto_extraction_mode: rawInput.auto_extraction_mode ?? current.autoExtractionMode,
+      auto_confirm_min_confidence:
+        rawInput.auto_confirm_min_confidence ?? current.autoConfirmMinConfidence,
+      auto_confirm_allowed_event_types:
+        rawInput.auto_confirm_allowed_event_types ?? current.autoConfirmAllowedEventTypes,
+      auto_confirm_keyword_allowlist:
+        rawInput.auto_confirm_keyword_allowlist ?? current.autoConfirmKeywordAllowlist,
+      auto_confirm_keyword_denylist:
+        rawInput.auto_confirm_keyword_denylist ?? current.autoConfirmKeywordDenylist,
+      auto_extraction_batch_size:
+        rawInput.auto_extraction_batch_size ?? current.autoExtractionBatchSize,
+      search_default_mode: rawInput.search_default_mode ?? current.searchDefaultMode,
+      search_hybrid_alpha: rawInput.search_hybrid_alpha ?? current.searchHybridAlpha,
+      search_hybrid_beta: rawInput.search_hybrid_beta ?? current.searchHybridBeta,
+      search_default_limit: rawInput.search_default_limit ?? current.searchDefaultLimit,
       github_key_prefix: rawInput.github_key_prefix ?? current.githubKeyPrefix,
       local_key_prefix: rawInput.local_key_prefix ?? current.localKeyPrefix,
+      enable_monorepo_resolution:
+        rawInput.enable_monorepo_resolution ?? current.enableMonorepoResolution,
+      monorepo_detection_level:
+        rawInput.monorepo_detection_level ?? current.monorepoDetectionLevel,
+      monorepo_mode: rawInput.monorepo_mode ?? current.monorepoMode,
+      monorepo_root_markers: rawInput.monorepo_root_markers ?? current.monorepoRootMarkers,
+      monorepo_workspace_globs:
+        rawInput.monorepo_workspace_globs ?? current.monorepoWorkspaceGlobs,
+      monorepo_exclude_globs:
+        rawInput.monorepo_exclude_globs ?? current.monorepoExcludeGlobs,
+      monorepo_max_depth: rawInput.monorepo_max_depth ?? current.monorepoMaxDepth,
     });
     if (!parsed.success) {
       throw new ValidationError(parsed.error.issues.map((issue) => issue.message).join(', '));
@@ -668,30 +970,142 @@ export class MemoryCoreService {
       update: {
         resolutionOrder: parsed.data.resolution_order,
         autoCreateProject: parsed.data.auto_create_project,
+        autoCreateProjectSubprojects: parsed.data.auto_create_project_subprojects,
+        autoSwitchRepo: parsed.data.auto_switch_repo,
+        autoSwitchSubproject: parsed.data.auto_switch_subproject,
+        allowManualPin: parsed.data.allow_manual_pin,
+        enableGitEvents: parsed.data.enable_git_events,
+        enableCommitEvents: parsed.data.enable_commit_events,
+        enableMergeEvents: parsed.data.enable_merge_events,
+        enableCheckoutEvents: parsed.data.enable_checkout_events,
+        checkoutDebounceSeconds: parsed.data.checkout_debounce_seconds,
+        checkoutDailyLimit: parsed.data.checkout_daily_limit,
+        enableAutoExtraction: parsed.data.enable_auto_extraction,
+        autoExtractionMode: parsed.data.auto_extraction_mode,
+        autoConfirmMinConfidence: parsed.data.auto_confirm_min_confidence,
+        autoConfirmAllowedEventTypes: parsed.data.auto_confirm_allowed_event_types,
+        autoConfirmKeywordAllowlist: parsed.data.auto_confirm_keyword_allowlist,
+        autoConfirmKeywordDenylist: parsed.data.auto_confirm_keyword_denylist,
+        autoExtractionBatchSize: parsed.data.auto_extraction_batch_size,
+        searchDefaultMode: parsed.data.search_default_mode,
+        searchHybridAlpha: parsed.data.search_hybrid_alpha,
+        searchHybridBeta: parsed.data.search_hybrid_beta,
+        searchDefaultLimit: parsed.data.search_default_limit,
         githubKeyPrefix: parsed.data.github_key_prefix,
         localKeyPrefix: parsed.data.local_key_prefix,
+        enableMonorepoResolution: parsed.data.enable_monorepo_resolution,
+        monorepoDetectionLevel: parsed.data.monorepo_detection_level,
+        monorepoMode: parsed.data.monorepo_mode,
+        monorepoRootMarkers: parsed.data.monorepo_root_markers,
+        monorepoWorkspaceGlobs: parsed.data.monorepo_workspace_globs,
+        monorepoExcludeGlobs: parsed.data.monorepo_exclude_globs,
+        monorepoMaxDepth: parsed.data.monorepo_max_depth,
       },
       create: {
         workspaceId: workspace.id,
         resolutionOrder: parsed.data.resolution_order,
         autoCreateProject: parsed.data.auto_create_project,
+        autoCreateProjectSubprojects: parsed.data.auto_create_project_subprojects,
+        autoSwitchRepo: parsed.data.auto_switch_repo,
+        autoSwitchSubproject: parsed.data.auto_switch_subproject,
+        allowManualPin: parsed.data.allow_manual_pin,
+        enableGitEvents: parsed.data.enable_git_events,
+        enableCommitEvents: parsed.data.enable_commit_events,
+        enableMergeEvents: parsed.data.enable_merge_events,
+        enableCheckoutEvents: parsed.data.enable_checkout_events,
+        checkoutDebounceSeconds: parsed.data.checkout_debounce_seconds,
+        checkoutDailyLimit: parsed.data.checkout_daily_limit,
+        enableAutoExtraction: parsed.data.enable_auto_extraction,
+        autoExtractionMode: parsed.data.auto_extraction_mode,
+        autoConfirmMinConfidence: parsed.data.auto_confirm_min_confidence,
+        autoConfirmAllowedEventTypes: parsed.data.auto_confirm_allowed_event_types,
+        autoConfirmKeywordAllowlist: parsed.data.auto_confirm_keyword_allowlist,
+        autoConfirmKeywordDenylist: parsed.data.auto_confirm_keyword_denylist,
+        autoExtractionBatchSize: parsed.data.auto_extraction_batch_size,
+        searchDefaultMode: parsed.data.search_default_mode,
+        searchHybridAlpha: parsed.data.search_hybrid_alpha,
+        searchHybridBeta: parsed.data.search_hybrid_beta,
+        searchDefaultLimit: parsed.data.search_default_limit,
         githubKeyPrefix: parsed.data.github_key_prefix,
         localKeyPrefix: parsed.data.local_key_prefix,
+        enableMonorepoResolution: parsed.data.enable_monorepo_resolution,
+        monorepoDetectionLevel: parsed.data.monorepo_detection_level,
+        monorepoMode: parsed.data.monorepo_mode,
+        monorepoRootMarkers: parsed.data.monorepo_root_markers,
+        monorepoWorkspaceGlobs: parsed.data.monorepo_workspace_globs,
+        monorepoExcludeGlobs: parsed.data.monorepo_exclude_globs,
+        monorepoMaxDepth: parsed.data.monorepo_max_depth,
       },
     });
 
     const nextSettings = {
-      resolution_order: this.parseResolutionOrder(settings.resolutionOrder),
+      resolution_order: parseResolutionOrder(settings.resolutionOrder),
       auto_create_project: settings.autoCreateProject,
+      auto_create_project_subprojects: settings.autoCreateProjectSubprojects,
+      auto_switch_repo: settings.autoSwitchRepo,
+      auto_switch_subproject: settings.autoSwitchSubproject,
+      allow_manual_pin: settings.allowManualPin,
+      enable_git_events: settings.enableGitEvents,
+      enable_commit_events: settings.enableCommitEvents,
+      enable_merge_events: settings.enableMergeEvents,
+      enable_checkout_events: settings.enableCheckoutEvents,
+      checkout_debounce_seconds: settings.checkoutDebounceSeconds,
+      checkout_daily_limit: settings.checkoutDailyLimit,
+      enable_auto_extraction: settings.enableAutoExtraction,
+      auto_extraction_mode: settings.autoExtractionMode,
+      auto_confirm_min_confidence: settings.autoConfirmMinConfidence,
+      auto_confirm_allowed_event_types: settings.autoConfirmAllowedEventTypes,
+      auto_confirm_keyword_allowlist: settings.autoConfirmKeywordAllowlist,
+      auto_confirm_keyword_denylist: settings.autoConfirmKeywordDenylist,
+      auto_extraction_batch_size: settings.autoExtractionBatchSize,
+      search_default_mode: settings.searchDefaultMode,
+      search_hybrid_alpha: settings.searchHybridAlpha,
+      search_hybrid_beta: settings.searchHybridBeta,
+      search_default_limit: settings.searchDefaultLimit,
       github_key_prefix: settings.githubKeyPrefix,
       local_key_prefix: settings.localKeyPrefix,
+      enable_monorepo_resolution: settings.enableMonorepoResolution,
+      monorepo_detection_level: settings.monorepoDetectionLevel,
+      monorepo_mode: settings.monorepoMode,
+      monorepo_root_markers: settings.monorepoRootMarkers,
+      monorepo_workspace_globs: settings.monorepoWorkspaceGlobs,
+      monorepo_exclude_globs: settings.monorepoExcludeGlobs,
+      monorepo_max_depth: settings.monorepoMaxDepth,
     };
     const changedFields = diffFields(
       {
         resolution_order: current.resolutionOrder,
         auto_create_project: current.autoCreateProject,
+        auto_create_project_subprojects: current.autoCreateProjectSubprojects,
+        auto_switch_repo: current.autoSwitchRepo,
+        auto_switch_subproject: current.autoSwitchSubproject,
+        allow_manual_pin: current.allowManualPin,
+        enable_git_events: current.enableGitEvents,
+        enable_commit_events: current.enableCommitEvents,
+        enable_merge_events: current.enableMergeEvents,
+        enable_checkout_events: current.enableCheckoutEvents,
+        checkout_debounce_seconds: current.checkoutDebounceSeconds,
+        checkout_daily_limit: current.checkoutDailyLimit,
+        enable_auto_extraction: current.enableAutoExtraction,
+        auto_extraction_mode: current.autoExtractionMode,
+        auto_confirm_min_confidence: current.autoConfirmMinConfidence,
+        auto_confirm_allowed_event_types: current.autoConfirmAllowedEventTypes,
+        auto_confirm_keyword_allowlist: current.autoConfirmKeywordAllowlist,
+        auto_confirm_keyword_denylist: current.autoConfirmKeywordDenylist,
+        auto_extraction_batch_size: current.autoExtractionBatchSize,
+        search_default_mode: current.searchDefaultMode,
+        search_hybrid_alpha: current.searchHybridAlpha,
+        search_hybrid_beta: current.searchHybridBeta,
+        search_default_limit: current.searchDefaultLimit,
         github_key_prefix: current.githubKeyPrefix,
         local_key_prefix: current.localKeyPrefix,
+        enable_monorepo_resolution: current.enableMonorepoResolution,
+        monorepo_detection_level: current.monorepoDetectionLevel,
+        monorepo_mode: current.monorepoMode,
+        monorepo_root_markers: current.monorepoRootMarkers,
+        monorepo_workspace_globs: current.monorepoWorkspaceGlobs,
+        monorepo_exclude_globs: current.monorepoExcludeGlobs,
+        monorepo_max_depth: current.monorepoMaxDepth,
       },
       nextSettings
     );
@@ -708,8 +1122,36 @@ export class MemoryCoreService {
         before: {
           resolution_order: current.resolutionOrder,
           auto_create_project: current.autoCreateProject,
+          auto_create_project_subprojects: current.autoCreateProjectSubprojects,
+          auto_switch_repo: current.autoSwitchRepo,
+          auto_switch_subproject: current.autoSwitchSubproject,
+          allow_manual_pin: current.allowManualPin,
+          enable_git_events: current.enableGitEvents,
+          enable_commit_events: current.enableCommitEvents,
+          enable_merge_events: current.enableMergeEvents,
+          enable_checkout_events: current.enableCheckoutEvents,
+          checkout_debounce_seconds: current.checkoutDebounceSeconds,
+          checkout_daily_limit: current.checkoutDailyLimit,
+          enable_auto_extraction: current.enableAutoExtraction,
+          auto_extraction_mode: current.autoExtractionMode,
+          auto_confirm_min_confidence: current.autoConfirmMinConfidence,
+          auto_confirm_allowed_event_types: current.autoConfirmAllowedEventTypes,
+          auto_confirm_keyword_allowlist: current.autoConfirmKeywordAllowlist,
+          auto_confirm_keyword_denylist: current.autoConfirmKeywordDenylist,
+          auto_extraction_batch_size: current.autoExtractionBatchSize,
+          search_default_mode: current.searchDefaultMode,
+          search_hybrid_alpha: current.searchHybridAlpha,
+          search_hybrid_beta: current.searchHybridBeta,
+          search_default_limit: current.searchDefaultLimit,
           github_key_prefix: current.githubKeyPrefix,
           local_key_prefix: current.localKeyPrefix,
+          enable_monorepo_resolution: current.enableMonorepoResolution,
+          monorepo_detection_level: current.monorepoDetectionLevel,
+          monorepo_mode: current.monorepoMode,
+          monorepo_root_markers: current.monorepoRootMarkers,
+          monorepo_workspace_globs: current.monorepoWorkspaceGlobs,
+          monorepo_exclude_globs: current.monorepoExcludeGlobs,
+          monorepo_max_depth: current.monorepoMaxDepth,
         },
         after: nextSettings,
       },
@@ -727,7 +1169,7 @@ export class MemoryCoreService {
     kind?: ResolutionKind;
   }) {
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    await this.assertWorkspaceAccess(args.auth, workspace.id);
+    await assertWorkspaceAccess(this.prisma, args.auth, workspace.id);
     const mappings = await this.prisma.projectMapping.findMany({
       where: {
         workspaceId: workspace.id,
@@ -768,7 +1210,7 @@ export class MemoryCoreService {
       throw new ValidationError(parsed.error.issues.map((issue) => issue.message).join(', '));
     }
     const workspace = await this.getWorkspaceByKey(parsed.data.workspace_key);
-    await this.assertWorkspaceAdmin(args.auth, workspace.id);
+    await assertWorkspaceAdmin(this.prisma, args.auth, workspace.id);
     const project = await this.prisma.project.findUnique({
       where: {
         workspaceId_key: {
@@ -864,7 +1306,7 @@ export class MemoryCoreService {
       throw new NotFoundError(`Project mapping not found: ${parsed.data.id}`);
     }
 
-    await this.assertWorkspaceAdmin(args.auth, current.workspaceId);
+    await assertWorkspaceAdmin(this.prisma, args.auth, current.workspaceId);
 
     let projectId: string | undefined;
     if (parsed.data.project_key) {
@@ -947,17 +1389,17 @@ export class MemoryCoreService {
     projectKey?: string;
   }): Promise<{ import_id: string }> {
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    await this.assertWorkspaceAccess(args.auth, workspace.id);
+    await assertWorkspaceAccess(this.prisma, args.auth, workspace.id);
 
     let projectId: string | undefined;
     if (args.projectKey) {
       const project = await this.getProjectByKeys(args.workspaceKey, args.projectKey);
-      await this.assertProjectAccess(args.auth, workspace.id, project.id);
+      await assertProjectAccess(this.prisma, args.auth, workspace.id, project.id);
       projectId = project.id;
     }
 
     const importId = randomUUID();
-    const importDir = path.join(tmpdir(), 'context-sync-imports');
+    const importDir = path.join(tmpdir(), 'claustrum-imports');
     await mkdir(importDir, { recursive: true });
     const safeName = args.fileName.replace(/[^a-zA-Z0-9._-]+/g, '_');
     const filePath = path.join(importDir, `${importId}-${safeName}`);
@@ -990,7 +1432,7 @@ export class MemoryCoreService {
     limit?: number;
   }) {
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    await this.assertWorkspaceAccess(args.auth, workspace.id);
+    await assertWorkspaceAccess(this.prisma, args.auth, workspace.id);
     const limit = Math.min(Math.max(args.limit || 30, 1), 100);
     return this.prisma.importRecord.findMany({
       where: { workspaceId: workspace.id },
@@ -1014,7 +1456,7 @@ export class MemoryCoreService {
     importId: string;
   }) {
     const record = await this.getImportRecordById(args.importId);
-    await this.assertWorkspaceAccess(args.auth, record.workspaceId);
+    await assertWorkspaceAccess(this.prisma, args.auth, record.workspaceId);
 
     if (!record.filePath) {
       throw new ValidationError('Import file path is missing.');
@@ -1120,7 +1562,7 @@ export class MemoryCoreService {
     importId: string;
   }) {
     const record = await this.getImportRecordById(args.importId);
-    await this.assertWorkspaceAccess(args.auth, record.workspaceId);
+    await assertWorkspaceAccess(this.prisma, args.auth, record.workspaceId);
 
     const sessions = await this.prisma.rawSession.findMany({
       where: { importId: record.id },
@@ -1169,6 +1611,86 @@ export class MemoryCoreService {
       });
     });
 
+    const refreshedImport = await this.prisma.importRecord.findUnique({
+      where: { id: record.id },
+      select: {
+        id: true,
+        stats: true,
+        workspaceId: true,
+      },
+    });
+    const statsObject = toJsonObject(refreshedImport?.stats);
+    if (statsObject.auto_decision_extracted !== true) {
+      const settings = await getEffectiveWorkspaceSettings(this.prisma, record.workspaceId);
+      if (settings.enableAutoExtraction) {
+        const decisionCandidates = candidates
+          .filter((candidate) => candidate.type === 'decision')
+          .slice(0, settings.autoExtractionBatchSize);
+        const created: Array<{ id: string; content: string }> = [];
+        for (const candidate of decisionCandidates) {
+          const text = candidate.content.toLowerCase();
+          const allowHit = settings.autoConfirmKeywordAllowlist.some((keyword) =>
+            text.includes(keyword.toLowerCase())
+          );
+          const denyHit = settings.autoConfirmKeywordDenylist.some((keyword) =>
+            text.includes(keyword.toLowerCase())
+          );
+          let confidence = 0.55 + (allowHit ? 0.2 : 0) - (denyHit ? 0.25 : 0);
+          confidence = Math.min(Math.max(confidence, 0), 1);
+          const status =
+            settings.autoExtractionMode === 'auto_confirm' &&
+            allowHit &&
+            !denyHit &&
+            confidence >= settings.autoConfirmMinConfidence
+              ? 'confirmed'
+              : 'draft';
+          const projectId = candidate.projectId ?? getStringFromJson(record.stats, 'project_id');
+          if (!projectId) {
+            continue;
+          }
+          const memory = await this.prisma.memory.create({
+            data: {
+              workspaceId: record.workspaceId,
+              projectId,
+              type: 'decision',
+              content: candidate.content,
+              source: 'import',
+              status,
+              confidence,
+              evidence: {
+                import_id: record.id,
+                raw_session_ids: sessions.map((session) => session.id),
+              } as Prisma.InputJsonValue,
+              metadata: {
+                extraction: {
+                  version: 'import-rule-v1',
+                },
+              } as Prisma.InputJsonValue,
+              createdBy: args.auth.user.id,
+            },
+            select: {
+              id: true,
+              content: true,
+            },
+          });
+          created.push(memory);
+        }
+        for (const item of created) {
+          await this.updateMemoryEmbedding(item.id, item.content);
+        }
+        await this.prisma.importRecord.update({
+          where: { id: record.id },
+          data: {
+            stats: {
+              ...(record.stats as Record<string, unknown> | null),
+              auto_decision_extracted: true,
+              auto_decision_count: created.length,
+            },
+          },
+        });
+      }
+    }
+
     return {
       import_id: record.id,
       status: ImportStatus.extracted,
@@ -1181,7 +1703,7 @@ export class MemoryCoreService {
     importId: string;
   }) {
     const record = await this.getImportRecordById(args.importId);
-    await this.assertWorkspaceAccess(args.auth, record.workspaceId);
+    await assertWorkspaceAccess(this.prisma, args.auth, record.workspaceId);
     return this.prisma.stagedMemory.findMany({
       where: { importId: record.id },
       orderBy: [{ createdAt: 'asc' }],
@@ -1208,7 +1730,7 @@ export class MemoryCoreService {
     projectKey?: string;
   }) {
     const record = await this.getImportRecordById(args.importId);
-    await this.assertWorkspaceAccess(args.auth, record.workspaceId);
+    await assertWorkspaceAccess(this.prisma, args.auth, record.workspaceId);
 
     let overrideProjectId: string | undefined;
     if (args.projectKey) {
@@ -1219,7 +1741,7 @@ export class MemoryCoreService {
         throw new NotFoundError('Workspace not found for import.');
       }
       const project = await this.getProjectByKeys(workspace.key, args.projectKey);
-      await this.assertProjectAccess(args.auth, record.workspaceId, project.id);
+      await assertProjectAccess(this.prisma, args.auth, record.workspaceId, project.id);
       overrideProjectId = project.id;
     }
 
@@ -1235,6 +1757,7 @@ export class MemoryCoreService {
     }
 
     let committed = 0;
+    const createdForEmbedding: Array<{ id: string; content: string }> = [];
     await this.prisma.$transaction(async (tx) => {
       for (const candidate of staged) {
         const targetProjectId =
@@ -1242,16 +1765,28 @@ export class MemoryCoreService {
         if (!targetProjectId) {
           continue;
         }
-        await tx.memory.create({
+        const created = await tx.memory.create({
           data: {
             workspaceId: record.workspaceId,
             projectId: targetProjectId,
             type: candidate.type,
             content: candidate.content,
+            source: 'import',
+            status: 'confirmed',
+            confidence: 1.0,
+            evidence: {
+              import_id: record.id,
+              staged_memory_id: candidate.id,
+            } as Prisma.InputJsonValue,
             metadata: candidate.metadata ?? undefined,
             createdBy: args.auth.user.id,
           },
+          select: {
+            id: true,
+            content: true,
+          },
         });
+        createdForEmbedding.push(created);
         committed += 1;
       }
 
@@ -1267,6 +1802,9 @@ export class MemoryCoreService {
         },
       });
     });
+    for (const item of createdForEmbedding) {
+      await this.updateMemoryEmbedding(item.id, item.content);
+    }
 
     return {
       import_id: record.id,
@@ -1295,10 +1833,10 @@ export class MemoryCoreService {
     let projectId: string | undefined;
     if (args.projectKey) {
       const project = await this.getProjectByKeys(args.workspaceKey, args.projectKey);
-      await this.assertRawAccess(args.auth, workspace.id, project.id);
+      await assertRawAccess(this.prisma, args.auth, workspace.id, project.id);
       projectId = project.id;
     } else {
-      await this.assertRawAccess(args.auth, workspace.id, undefined);
+      await assertRawAccess(this.prisma, args.auth, workspace.id, undefined);
     }
 
     const matches = await this.prisma.$queryRaw<
@@ -1384,7 +1922,7 @@ export class MemoryCoreService {
       throw new NotFoundError(`Raw message not found: ${args.messageId}`);
     }
 
-    await this.assertRawAccess(
+    await assertRawAccess(this.prisma, 
       args.auth,
       message.rawSession.workspaceId,
       message.rawSession.projectId || undefined
@@ -1425,7 +1963,7 @@ export class MemoryCoreService {
       throw new ValidationError('q is required');
     }
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    await this.assertWorkspaceAccess(args.auth, workspace.id);
+    await assertWorkspaceAccess(this.prisma, args.auth, workspace.id);
     const notionConfig = await this.getNotionClientForWorkspace(workspace.id);
     const limit = Math.min(Math.max(args.limit || 10, 1), 20);
     const pages = await notionConfig.client.searchPages(q, limit);
@@ -1452,7 +1990,7 @@ export class MemoryCoreService {
     maxChars?: number;
   }) {
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    await this.assertWorkspaceAccess(args.auth, workspace.id);
+    await assertWorkspaceAccess(this.prisma, args.auth, workspace.id);
     const notionConfig = await this.getNotionClientForWorkspace(workspace.id);
     const maxChars = Math.min(Math.max(args.maxChars || 4000, 200), 20000);
     const page = await notionConfig.client.readPage(args.pageId, maxChars);
@@ -1489,7 +2027,7 @@ export class MemoryCoreService {
     }
 
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    await this.assertWorkspaceAdmin(args.auth, workspace.id);
+    await assertWorkspaceAdmin(this.prisma, args.auth, workspace.id);
     const notionConfig = await this.getNotionClientForWorkspace(workspace.id);
     if (!notionConfig.writeEnabled) {
       throw new AuthorizationError(
@@ -1529,7 +2067,7 @@ export class MemoryCoreService {
       throw new ValidationError('q is required');
     }
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    await this.assertWorkspaceAccess(args.auth, workspace.id);
+    await assertWorkspaceAccess(this.prisma, args.auth, workspace.id);
     const jira = await this.getJiraClientForWorkspace(workspace.id);
     const limit = Math.min(Math.max(args.limit || 10, 1), 20);
     const issues = await jira.searchIssues(q, limit);
@@ -1556,7 +2094,7 @@ export class MemoryCoreService {
     maxChars?: number;
   }) {
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    await this.assertWorkspaceAccess(args.auth, workspace.id);
+    await assertWorkspaceAccess(this.prisma, args.auth, workspace.id);
     const jira = await this.getJiraClientForWorkspace(workspace.id);
     const maxChars = Math.min(Math.max(args.maxChars || 4000, 200), 20000);
     const issue = await jira.readIssue(args.issueKey, maxChars);
@@ -1586,7 +2124,7 @@ export class MemoryCoreService {
       throw new ValidationError('q is required');
     }
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    await this.assertWorkspaceAccess(args.auth, workspace.id);
+    await assertWorkspaceAccess(this.prisma, args.auth, workspace.id);
     const confluence = await this.getConfluenceClientForWorkspace(workspace.id);
     const limit = Math.min(Math.max(args.limit || 10, 1), 20);
     const pages = await confluence.searchPages(q, limit);
@@ -1613,7 +2151,7 @@ export class MemoryCoreService {
     maxChars?: number;
   }) {
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    await this.assertWorkspaceAccess(args.auth, workspace.id);
+    await assertWorkspaceAccess(this.prisma, args.auth, workspace.id);
     const confluence = await this.getConfluenceClientForWorkspace(workspace.id);
     const maxChars = Math.min(Math.max(args.maxChars || 4000, 200), 20000);
     const page = await confluence.readPage(args.pageId, maxChars);
@@ -1643,7 +2181,7 @@ export class MemoryCoreService {
       throw new ValidationError('q is required');
     }
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    await this.assertWorkspaceAccess(args.auth, workspace.id);
+    await assertWorkspaceAccess(this.prisma, args.auth, workspace.id);
     const linear = await this.getLinearClientForWorkspace(workspace.id);
     const limit = Math.min(Math.max(args.limit || 10, 1), 20);
     const issues = await linear.searchIssues(q, limit);
@@ -1671,7 +2209,7 @@ export class MemoryCoreService {
     maxChars?: number;
   }) {
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    await this.assertWorkspaceAccess(args.auth, workspace.id);
+    await assertWorkspaceAccess(this.prisma, args.auth, workspace.id);
     const linear = await this.getLinearClientForWorkspace(workspace.id);
     const maxChars = Math.min(Math.max(args.maxChars || 4000, 200), 20000);
     const issue = await linear.readIssue(args.issueKey, maxChars);
@@ -1696,7 +2234,7 @@ export class MemoryCoreService {
     workspaceKey: string;
   }) {
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    await this.assertWorkspaceAdmin(args.auth, workspace.id);
+    await assertWorkspaceAdmin(this.prisma, args.auth, workspace.id);
 
     const rows = await this.prisma.workspaceIntegration.findMany({
       where: {
@@ -1708,6 +2246,7 @@ export class MemoryCoreService {
             IntegrationProvider.confluence,
             IntegrationProvider.linear,
             IntegrationProvider.slack,
+            IntegrationProvider.audit_reasoner,
           ],
         },
       },
@@ -1716,6 +2255,7 @@ export class MemoryCoreService {
     for (const row of rows) {
       byProvider.set(row.provider, row);
     }
+    const reasonerEnvPreferred = hasEnvAuditReasonerPreference(this.auditReasonerEnvConfig);
 
     return {
       workspace_key: workspace.key,
@@ -1755,6 +2295,14 @@ export class MemoryCoreService {
           notionWriteEnabled: this.notionWriteEnabled,
           locked: this.isIntegrationLocked(IntegrationProvider.slack),
         }),
+        audit_reasoner: toIntegrationSummary({
+          provider: IntegrationProvider.audit_reasoner,
+          row: reasonerEnvPreferred ? undefined : byProvider.get(IntegrationProvider.audit_reasoner),
+          configuredFromEnv: reasonerEnvPreferred,
+          notionWriteEnabled: this.notionWriteEnabled,
+          locked: this.isIntegrationLocked(IntegrationProvider.audit_reasoner),
+          envConfig: getEnvAuditReasonerConfigAsJson(this.auditReasonerEnvConfig),
+        }),
       },
     };
   }
@@ -1762,13 +2310,13 @@ export class MemoryCoreService {
   async upsertWorkspaceIntegration(args: {
     auth: AuthContext;
     workspaceKey: string;
-    provider: 'notion' | 'jira' | 'confluence' | 'linear' | 'slack';
+    provider: 'notion' | 'jira' | 'confluence' | 'linear' | 'slack' | 'audit_reasoner';
     enabled?: boolean;
     config?: Record<string, unknown>;
     reason?: string;
   }) {
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    await this.assertWorkspaceAdmin(args.auth, workspace.id);
+    await assertWorkspaceAdmin(this.prisma, args.auth, workspace.id);
 
     const provider = toIntegrationProvider(args.provider);
     if (this.isIntegrationLocked(provider)) {
@@ -1840,14 +2388,22 @@ export class MemoryCoreService {
       },
     });
 
+    const reasonerEnvPreferred =
+      provider === IntegrationProvider.audit_reasoner
+        ? hasEnvAuditReasonerPreference(this.auditReasonerEnvConfig)
+        : false;
     return {
       workspace_key: workspace.key,
       provider: args.provider,
       integration: toIntegrationSummary({
         provider,
-        row: saved,
-        configuredFromEnv: false,
+        row: reasonerEnvPreferred ? undefined : saved,
+        configuredFromEnv: reasonerEnvPreferred,
         notionWriteEnabled: this.notionWriteEnabled,
+        envConfig:
+          provider === IntegrationProvider.audit_reasoner
+            ? getEnvAuditReasonerConfigAsJson(this.auditReasonerEnvConfig)
+            : undefined,
       }),
     };
   }
@@ -1859,7 +2415,7 @@ export class MemoryCoreService {
     actionPrefix?: string;
   }) {
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    await this.assertWorkspaceAdmin(args.auth, workspace.id);
+    await assertWorkspaceAdmin(this.prisma, args.auth, workspace.id);
     const limit = Math.min(Math.max(args.limit || 50, 1), 200);
     const logs = await this.prisma.auditLog.findMany({
       where: {
@@ -1883,6 +2439,208 @@ export class MemoryCoreService {
     return { logs };
   }
 
+  async captureRawEvent(args: {
+    auth: AuthContext;
+    workspaceKey: string;
+    projectKey: string;
+    eventType: RawEventType | 'post_commit' | 'post_merge' | 'post_checkout';
+    branch?: string;
+    fromBranch?: string;
+    toBranch?: string;
+    commitSha?: string;
+    commitMessage?: string;
+    changedFiles?: string[];
+    metadata?: Record<string, unknown>;
+  }) {
+    const workspace = await this.getWorkspaceByKey(args.workspaceKey);
+    const project = await this.getProjectByKeys(args.workspaceKey, args.projectKey);
+    await assertProjectAccess(this.prisma, args.auth, workspace.id, project.id);
+    const settings = await getEffectiveWorkspaceSettings(this.prisma, workspace.id);
+    const eventType = args.eventType as RawEventType;
+    const { repoKey, subprojectKey } = this.splitProjectKey(project.key);
+    const metadata = args.metadata || {};
+
+    if (!settings.enableGitEvents) {
+      return {
+        ok: true as const,
+        skipped: true as const,
+        skip_reason: 'git_events_disabled',
+        workspace_key: workspace.key,
+        project_key: project.key,
+        event_type: eventType,
+      };
+    }
+    if (eventType === RawEventType.post_commit && !settings.enableCommitEvents) {
+      return {
+        ok: true as const,
+        skipped: true as const,
+        skip_reason: 'commit_events_disabled',
+        workspace_key: workspace.key,
+        project_key: project.key,
+        event_type: eventType,
+      };
+    }
+    if (eventType === RawEventType.post_merge && !settings.enableMergeEvents) {
+      return {
+        ok: true as const,
+        skipped: true as const,
+        skip_reason: 'merge_events_disabled',
+        workspace_key: workspace.key,
+        project_key: project.key,
+        event_type: eventType,
+      };
+    }
+    if (eventType === RawEventType.post_checkout && !settings.enableCheckoutEvents) {
+      return {
+        ok: true as const,
+        skipped: true as const,
+        skip_reason: 'checkout_events_disabled',
+        workspace_key: workspace.key,
+        project_key: project.key,
+        event_type: eventType,
+      };
+    }
+
+    if (eventType === RawEventType.post_checkout) {
+      const lastCheckout = await this.prisma.rawEvent.findFirst({
+        where: {
+          projectId: project.id,
+          eventType: RawEventType.post_checkout,
+        },
+        orderBy: [{ createdAt: 'desc' }],
+      });
+
+      if (lastCheckout && args.branch && lastCheckout.branch === args.branch) {
+        return {
+          ok: true as const,
+          skipped: true as const,
+          skip_reason: 'checkout_same_branch',
+          workspace_key: workspace.key,
+          project_key: project.key,
+          event_type: eventType,
+        };
+      }
+
+      if (lastCheckout && settings.checkoutDebounceSeconds > 0) {
+        const elapsed = Date.now() - lastCheckout.createdAt.getTime();
+        if (elapsed < settings.checkoutDebounceSeconds * 1000) {
+          return {
+            ok: true as const,
+            skipped: true as const,
+            skip_reason: 'checkout_debounced',
+            workspace_key: workspace.key,
+            project_key: project.key,
+            event_type: eventType,
+          };
+        }
+      }
+
+      const startOfDayUtc = new Date();
+      startOfDayUtc.setUTCHours(0, 0, 0, 0);
+      const todayCount = await this.prisma.rawEvent.count({
+        where: {
+          projectId: project.id,
+          eventType: RawEventType.post_checkout,
+          createdAt: {
+            gte: startOfDayUtc,
+          },
+        },
+      });
+      if (todayCount >= settings.checkoutDailyLimit) {
+        return {
+          ok: true as const,
+          skipped: true as const,
+          skip_reason: 'checkout_daily_limit_reached',
+          workspace_key: workspace.key,
+          project_key: project.key,
+          event_type: eventType,
+        };
+      }
+    }
+
+    const row = await this.prisma.rawEvent.create({
+      data: {
+        workspaceId: workspace.id,
+        projectId: project.id,
+        eventType,
+        repoKey,
+        subprojectKey,
+        branch: args.branch || null,
+        fromBranch: args.fromBranch || null,
+        toBranch: args.toBranch || null,
+        commitSha: args.commitSha || null,
+        commitMessage: args.commitMessage || null,
+        changedFiles:
+          args.changedFiles && args.changedFiles.length > 0
+            ? (args.changedFiles as Prisma.InputJsonValue)
+            : undefined,
+        metadata: metadata as Prisma.InputJsonValue,
+      },
+    });
+
+    const event =
+      eventType === RawEventType.post_commit
+        ? 'commit'
+        : eventType === RawEventType.post_merge
+          ? 'merge'
+          : 'checkout';
+    const action =
+      event === 'commit' ? 'git.commit' : event === 'merge' ? 'git.merge' : 'git.checkout';
+
+    await this.recordAudit({
+      workspaceId: workspace.id,
+      workspaceKey: workspace.key,
+      actorUserId: args.auth.user.id,
+      actorUserEmail: args.auth.user.email,
+      action,
+      target: {
+        workspace_key: workspace.key,
+        project_key: project.key,
+        event_type: eventType,
+        branch: args.branch || null,
+        from_branch: args.fromBranch || null,
+        to_branch: args.toBranch || null,
+        commit_sha: args.commitSha || null,
+        commit_message: args.commitMessage || null,
+        changed_files_count: args.changedFiles?.length || 0,
+        raw_event_id: row.id,
+        metadata,
+      },
+    });
+
+    const autoWrites = await this.runIntegrationAutoWrites({
+      auth: args.auth,
+      workspaceId: workspace.id,
+      workspaceKey: workspace.key,
+      projectKey: project.key,
+      event,
+      branch: args.branch,
+      commitHash: args.commitSha,
+      message: args.commitMessage,
+      metadata,
+    });
+
+    if (settings.enableAutoExtraction) {
+      setTimeout(() => {
+        void this.runDecisionExtractionFromRawEvent({
+          rawEventId: row.id,
+          actorUserId: args.auth.user.id,
+        }).catch((error) => {
+          console.error('[memory-core] auto extraction failed', error);
+        });
+      }, 0);
+    }
+
+    return {
+      ok: true as const,
+      workspace_key: workspace.key,
+      project_key: project.key,
+      event_type: eventType,
+      raw_event_id: row.id,
+      auto_writes: autoWrites,
+    };
+  }
+
   async handleGitEvent(args: {
     auth: AuthContext;
     workspaceKey: string;
@@ -1893,22 +2651,142 @@ export class MemoryCoreService {
     message?: string;
     metadata?: Record<string, unknown>;
   }) {
-    const workspace = await this.getWorkspaceByKey(args.workspaceKey);
-    const project = await this.getProjectByKeys(args.workspaceKey, args.projectKey);
-    await this.assertProjectAccess(args.auth, workspace.id, project.id);
-
-    const action =
+    const eventType =
       args.event === 'commit'
-        ? 'git.commit'
+        ? RawEventType.post_commit
         : args.event === 'merge'
-          ? 'git.merge'
-          : 'git.checkout';
-    const targetBase = {
+          ? RawEventType.post_merge
+          : RawEventType.post_checkout;
+    return this.captureRawEvent({
+      auth: args.auth,
+      workspaceKey: args.workspaceKey,
+      projectKey: args.projectKey,
+      eventType,
+      branch: args.branch,
+      commitSha: args.commitHash,
+      commitMessage: args.message,
+      metadata: args.metadata,
+    });
+  }
+
+  async listRawEvents(args: {
+    auth: AuthContext;
+    workspaceKey: string;
+    projectKey?: string;
+    eventType?: RawEventType | 'post_commit' | 'post_merge' | 'post_checkout';
+    commitSha?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+  }) {
+    const workspace = await this.getWorkspaceByKey(args.workspaceKey);
+    const limit = Math.min(Math.max(args.limit || 100, 1), 500);
+
+    let projectId: string | undefined;
+    if (args.projectKey) {
+      const project = await this.getProjectByKeys(args.workspaceKey, args.projectKey);
+      await assertProjectAccess(this.prisma, args.auth, workspace.id, project.id);
+      projectId = project.id;
+    } else {
+      await assertWorkspaceAdmin(this.prisma, args.auth, workspace.id);
+    }
+
+    const rows = await this.prisma.rawEvent.findMany({
+      where: {
+        workspaceId: workspace.id,
+        projectId,
+        eventType: args.eventType as RawEventType | undefined,
+        commitSha: args.commitSha
+          ? {
+              contains: args.commitSha,
+              mode: 'insensitive',
+            }
+          : undefined,
+        createdAt:
+          args.from || args.to
+            ? {
+                gte: args.from ? new Date(args.from) : undefined,
+                lte: args.to ? new Date(args.to) : undefined,
+              }
+            : undefined,
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      take: limit,
+      include: {
+        project: {
+          select: {
+            key: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    return {
+      events: rows.map((row) => ({
+        id: row.id,
+        event_type: row.eventType,
+        workspace_key: workspace.key,
+        project_key: row.project.key,
+        project_name: row.project.name,
+        repo_key: row.repoKey,
+        subproject_key: row.subprojectKey,
+        branch: row.branch,
+        from_branch: row.fromBranch,
+        to_branch: row.toBranch,
+        commit_sha: row.commitSha,
+        commit_message: row.commitMessage,
+        changed_files: row.changedFiles,
+        metadata: row.metadata,
+        created_at: row.createdAt,
+      })),
+    };
+  }
+
+  async handleCiEvent(args: {
+    auth: AuthContext;
+    workspaceKey: string;
+    status: 'success' | 'failure';
+    provider: 'github_actions' | 'generic';
+    projectKey?: string;
+    workflowName?: string;
+    workflowRunId?: string;
+    workflowRunUrl?: string;
+    repository?: string;
+    branch?: string;
+    sha?: string;
+    eventName?: string;
+    jobName?: string;
+    message?: string;
+    metadata?: Record<string, unknown>;
+  }) {
+    const workspace = await this.getWorkspaceByKey(args.workspaceKey);
+    await assertWorkspaceAccess(this.prisma, args.auth, workspace.id);
+
+    let project: { key: string; id: string } | null = null;
+    if (args.projectKey) {
+      const resolvedProject = await this.getProjectByKeys(args.workspaceKey, args.projectKey);
+      await assertProjectAccess(this.prisma, args.auth, workspace.id, resolvedProject.id);
+      project = {
+        key: resolvedProject.key,
+        id: resolvedProject.id,
+      };
+    }
+
+    const action = args.status === 'success' ? 'ci.success' : 'ci.failure';
+    const target = {
       workspace_key: workspace.key,
-      project_key: project.key,
-      event: args.event,
+      project_key: project?.key || null,
+      status: args.status,
+      provider: args.provider,
+      workflow_name: args.workflowName || null,
+      workflow_run_id: args.workflowRunId || null,
+      workflow_run_url: args.workflowRunUrl || null,
+      repository: args.repository || null,
       branch: args.branch || null,
-      commit_hash: args.commitHash || null,
+      sha: args.sha || null,
+      event_name: args.eventName || null,
+      job_name: args.jobName || null,
       message: args.message || null,
       metadata: args.metadata || {},
     };
@@ -1919,28 +2797,363 @@ export class MemoryCoreService {
       actorUserId: args.auth.user.id,
       actorUserEmail: args.auth.user.email,
       action,
-      target: targetBase,
-    });
-
-    const autoWrites = await this.runIntegrationAutoWrites({
-      auth: args.auth,
-      workspaceId: workspace.id,
-      workspaceKey: workspace.key,
-      projectKey: project.key,
-      event: args.event,
-      branch: args.branch,
-      commitHash: args.commitHash,
-      message: args.message,
-      metadata: args.metadata || {},
+      target,
     });
 
     return {
       ok: true as const,
       workspace_key: workspace.key,
-      project_key: project.key,
-      event: args.event,
-      auto_writes: autoWrites,
+      project_key: project?.key,
+      status: args.status,
+      action,
     };
+  }
+
+  async updateMemory(args: {
+    auth: AuthContext;
+    memoryId: string;
+    input: {
+      content?: string;
+      status?: 'draft' | 'confirmed' | 'rejected';
+      source?: 'auto' | 'human' | 'import';
+      confidence?: number;
+      metadata?: Record<string, unknown> | null;
+      evidence?: Record<string, unknown> | null;
+    };
+  }) {
+    const existing = await this.prisma.memory.findUnique({
+      where: { id: args.memoryId },
+      include: {
+        project: true,
+      },
+    });
+    if (!existing) {
+      throw new NotFoundError(`Memory not found: ${args.memoryId}`);
+    }
+    await assertProjectAccess(this.prisma, args.auth, existing.workspaceId, existing.projectId);
+
+    const nextContent =
+      typeof args.input.content === 'string' ? args.input.content.trim() : existing.content;
+    if (!nextContent) {
+      throw new ValidationError('content cannot be empty');
+    }
+    const updated = await this.prisma.memory.update({
+      where: { id: existing.id },
+      data: {
+        content: nextContent,
+        status: args.input.status ? memoryStatusSchema.parse(args.input.status) : undefined,
+        source: args.input.source ? memorySourceSchema.parse(args.input.source) : undefined,
+        confidence:
+          typeof args.input.confidence === 'number'
+            ? Math.min(Math.max(args.input.confidence, 0), 1)
+            : undefined,
+        metadata:
+          args.input.metadata === null
+            ? Prisma.DbNull
+            : (args.input.metadata as Prisma.InputJsonValue | undefined),
+        evidence:
+          args.input.evidence === null
+            ? Prisma.DbNull
+            : (args.input.evidence as Prisma.InputJsonValue | undefined),
+      },
+      select: {
+        id: true,
+        type: true,
+        content: true,
+        status: true,
+        source: true,
+        confidence: true,
+        evidence: true,
+        metadata: true,
+        createdBy: true,
+        createdAt: true,
+        project: {
+          select: {
+            key: true,
+            name: true,
+            workspace: {
+              select: {
+                key: true,
+                name: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    if (updated.content !== existing.content) {
+      await this.updateMemoryEmbedding(updated.id, updated.content);
+    }
+    return updated;
+  }
+
+  private async searchMemoryCandidateScores(args: {
+    workspaceId: string;
+    q: string;
+    projectIds: string[] | null;
+    type?: string;
+    status?: 'draft' | 'confirmed' | 'rejected';
+    source?: 'auto' | 'human' | 'import';
+    since?: string;
+    confidenceMin?: number;
+    confidenceMax?: number;
+    limit: number;
+    mode: 'keyword' | 'semantic';
+  }): Promise<Array<{ id: string; score: number }>> {
+    const clauses: string[] = ['m.workspace_id = $1'];
+    const params: unknown[] = [args.workspaceId];
+    let index = 2;
+
+    if (args.projectIds && args.projectIds.length > 0) {
+      clauses.push(`m.project_id = ANY($${index}::text[])`);
+      params.push(args.projectIds);
+      index += 1;
+    }
+    if (args.type) {
+      clauses.push(`m.type = $${index}`);
+      params.push(args.type);
+      index += 1;
+    }
+    if (args.status) {
+      clauses.push(`m.status = $${index}::"MemoryStatus"`);
+      params.push(args.status);
+      index += 1;
+    }
+    if (args.source) {
+      clauses.push(`m.source = $${index}::"MemorySource"`);
+      params.push(args.source);
+      index += 1;
+    }
+    if (args.since) {
+      clauses.push(`m.created_at >= $${index}::timestamptz`);
+      params.push(args.since);
+      index += 1;
+    }
+    if (typeof args.confidenceMin === 'number') {
+      clauses.push(`m.confidence >= $${index}`);
+      params.push(args.confidenceMin);
+      index += 1;
+    }
+    if (typeof args.confidenceMax === 'number') {
+      clauses.push(`m.confidence <= $${index}`);
+      params.push(args.confidenceMax);
+      index += 1;
+    }
+
+    if (args.mode === 'keyword') {
+      const tsQueryIndex = index;
+      const ilikeIndex = index + 1;
+      const limitIndex = index + 2;
+      const sql = `
+        SELECT
+          m.id::text AS id,
+          GREATEST(ts_rank_cd(m.content_tsv, plainto_tsquery('simple', $${tsQueryIndex})), 0)::float8 AS score
+        FROM memories m
+        WHERE ${clauses.join(' AND ')}
+          AND (
+            m.content_tsv @@ plainto_tsquery('simple', $${tsQueryIndex})
+            OR m.content ILIKE $${ilikeIndex}
+          )
+        ORDER BY score DESC, m.created_at DESC
+        LIMIT $${limitIndex}
+      `;
+      const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string; score: number }>>(
+        sql,
+        ...params,
+        args.q,
+        `%${args.q}%`,
+        Math.min(Math.max(args.limit, 1), 500)
+      );
+      return rows;
+    }
+
+    try {
+      const vectorLiteral = toVectorLiteral(buildLocalEmbedding(args.q));
+      const vectorIndex = index;
+      const limitIndex = index + 1;
+      const sql = `
+        SELECT
+          m.id::text AS id,
+          GREATEST(1 - (m.embedding <=> $${vectorIndex}::vector), 0)::float8 AS score
+        FROM memories m
+        WHERE ${clauses.join(' AND ')}
+          AND m.embedding IS NOT NULL
+        ORDER BY m.embedding <=> $${vectorIndex}::vector ASC
+        LIMIT $${limitIndex}
+      `;
+      const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string; score: number }>>(
+        sql,
+        ...params,
+        vectorLiteral,
+        Math.min(Math.max(args.limit, 1), 500)
+      );
+      return rows;
+    } catch (error) {
+      console.error('[memory-core] semantic search fallback to keyword', error);
+      return [];
+    }
+  }
+
+  private async updateMemoryEmbedding(memoryId: string, content: string): Promise<void> {
+    try {
+      const vectorLiteral = toVectorLiteral(buildLocalEmbedding(content));
+      await this.prisma.$executeRawUnsafe(
+        'UPDATE memories SET embedding = $1::vector WHERE id = $2',
+        vectorLiteral,
+        memoryId
+      );
+    } catch (error) {
+      console.error('[memory-core] embedding update failed', error);
+    }
+  }
+
+  private async runDecisionExtractionFromRawEvent(args: {
+    rawEventId: string;
+    actorUserId: string;
+  }): Promise<void> {
+    const event = await this.prisma.rawEvent.findUnique({
+      where: { id: args.rawEventId },
+      include: {
+        workspace: true,
+        project: true,
+      },
+    });
+    if (!event) {
+      return;
+    }
+
+    const settings = await getEffectiveWorkspaceSettings(this.prisma, event.workspaceId);
+    if (!settings.enableAutoExtraction) {
+      return;
+    }
+
+    const existingMeta = toJsonObject(event.metadata);
+    if (existingMeta.auto_extraction_processed === true) {
+      return;
+    }
+
+    const commitMessage = (event.commitMessage || '').trim();
+    if (!commitMessage) {
+      await this.prisma.rawEvent.update({
+        where: { id: event.id },
+        data: {
+          metadata: {
+            ...existingMeta,
+            auto_extraction_processed: true,
+            auto_extraction_result: 'no_commit_message',
+          } as Prisma.InputJsonValue,
+        },
+      });
+      return;
+    }
+
+    const allowlist = settings.autoConfirmKeywordAllowlist.map((item) => item.toLowerCase());
+    const denylist = settings.autoConfirmKeywordDenylist.map((item) => item.toLowerCase());
+    const normalizedMessage = commitMessage.toLowerCase();
+    const allowHit = allowlist.find((keyword) => normalizedMessage.includes(keyword));
+    const denyHit = denylist.find((keyword) => normalizedMessage.includes(keyword));
+    const changedFiles = Array.isArray(event.changedFiles)
+      ? (event.changedFiles as unknown[]).map((item) => String(item)).filter(Boolean)
+      : [];
+
+    let confidence = 0.35;
+    if (event.eventType === RawEventType.post_merge) {
+      confidence += 0.25;
+    } else if (event.eventType === RawEventType.post_commit) {
+      confidence += 0.2;
+    } else {
+      confidence += 0.05;
+    }
+    if (allowHit) {
+      confidence += 0.25;
+    }
+    if (denyHit) {
+      confidence -= 0.3;
+    }
+    if (changedFiles.length >= 3) {
+      confidence += 0.15;
+    } else if (changedFiles.length >= 1) {
+      confidence += 0.08;
+    }
+    confidence = Math.min(Math.max(confidence, 0), 1);
+
+    const shouldCreate = Boolean(allowHit) || (event.eventType === RawEventType.post_merge && !denyHit);
+    if (!shouldCreate) {
+      await this.prisma.rawEvent.update({
+        where: { id: event.id },
+        data: {
+          metadata: {
+            ...existingMeta,
+            auto_extraction_processed: true,
+            auto_extraction_result: 'no_decision_signal',
+            auto_extraction_confidence: confidence,
+          } as Prisma.InputJsonValue,
+        },
+      });
+      return;
+    }
+
+    const autoConfirmAllowed = settings.autoConfirmAllowedEventTypes.includes(event.eventType);
+    const autoConfirm =
+      settings.autoExtractionMode === 'auto_confirm' &&
+      autoConfirmAllowed &&
+      Boolean(allowHit) &&
+      !Boolean(denyHit) &&
+      confidence >= settings.autoConfirmMinConfidence;
+    const status = autoConfirm ? 'confirmed' : 'draft';
+
+    const content = [
+      `Summary: ${commitMessage}`,
+      `Reason: ${allowHit ? `detected keyword "${allowHit}" in commit message` : 'merge event heuristic'}.`,
+      `Evidence: commit_sha=${event.commitSha || 'n/a'}; event_id=${event.id}; files=${changedFiles.slice(0, 20).join(', ') || 'n/a'}`,
+    ].join('\n');
+    const evidence = {
+      raw_event_ids: [event.id],
+      commit_sha: event.commitSha || null,
+      event_type: event.eventType,
+      changed_files: changedFiles,
+      branch: event.branch || null,
+    };
+
+    const memory = await this.prisma.memory.create({
+      data: {
+        workspaceId: event.workspaceId,
+        projectId: event.projectId,
+        type: 'decision',
+        content,
+        status,
+        source: 'auto',
+        confidence,
+        evidence: evidence as Prisma.InputJsonValue,
+        metadata: {
+          extraction: {
+            version: 'rule-v1',
+            allow_keyword: allowHit || null,
+            deny_keyword: denyHit || null,
+            event_type: event.eventType,
+          },
+        } as Prisma.InputJsonValue,
+        createdBy: args.actorUserId,
+      },
+      select: {
+        id: true,
+        content: true,
+      },
+    });
+    await this.updateMemoryEmbedding(memory.id, memory.content);
+
+    await this.prisma.rawEvent.update({
+      where: { id: event.id },
+      data: {
+        metadata: {
+          ...existingMeta,
+          auto_extraction_processed: true,
+          auto_extraction_result: autoConfirm ? 'confirmed' : 'draft',
+          auto_extraction_confidence: confidence,
+          extracted_memory_id: memory.id,
+        } as Prisma.InputJsonValue,
+      },
+    });
   }
 
   private async getWorkspaceByKey(workspaceKey: string) {
@@ -1967,6 +3180,33 @@ export class MemoryCoreService {
       throw new NotFoundError(`Project not found: ${workspaceKey}/${projectKey}`);
     }
     return project;
+  }
+
+  private splitProjectKey(projectKey: string): {
+    repoKey: string;
+    subprojectKey: string | null;
+  } {
+    const hashIndex = projectKey.indexOf('#');
+    if (hashIndex > 0 && hashIndex < projectKey.length - 1) {
+      return {
+        repoKey: projectKey.slice(0, hashIndex),
+        subprojectKey: projectKey.slice(hashIndex + 1),
+      };
+    }
+
+    const schemeIndex = projectKey.indexOf(':');
+    const secondColon = schemeIndex >= 0 ? projectKey.indexOf(':', schemeIndex + 1) : -1;
+    if (secondColon > 0 && secondColon < projectKey.length - 1) {
+      return {
+        repoKey: projectKey.slice(0, secondColon),
+        subprojectKey: projectKey.slice(secondColon + 1),
+      };
+    }
+
+    return {
+      repoKey: projectKey,
+      subprojectKey: null,
+    };
   }
 
   private getNotionClient(): NotionClientAdapter {
@@ -2255,99 +3495,6 @@ export class MemoryCoreService {
     return this.getLinearClient();
   }
 
-  private async assertWorkspaceAccess(
-    auth: AuthContext,
-    workspaceId: string
-  ): Promise<{ role: WorkspaceRole }> {
-    const membership = await requireWorkspaceMembership({
-      prisma: this.prisma,
-      auth,
-      workspaceId,
-    });
-    if (!membership) {
-      throw new AuthorizationError('Workspace access denied');
-    }
-    return membership;
-  }
-
-  private async assertWorkspaceAdmin(auth: AuthContext, workspaceId: string): Promise<void> {
-    const membership = await requireWorkspaceMembership({
-      prisma: this.prisma,
-      auth,
-      workspaceId,
-    });
-    if (!membership) {
-      throw new AuthorizationError('Workspace access denied');
-    }
-    if (membership.role !== WorkspaceRole.ADMIN && membership.role !== WorkspaceRole.OWNER) {
-      throw new AuthorizationError('Workspace admin role required');
-    }
-  }
-
-  private async assertProjectAccess(auth: AuthContext, workspaceId: string, projectId: string): Promise<void> {
-    const allowed = await hasProjectAccess({
-      prisma: this.prisma,
-      auth,
-      workspaceId,
-      projectId,
-    });
-    if (!allowed) {
-      throw new AuthorizationError('Project access denied');
-    }
-  }
-
-  private isWorkspaceAdmin(role: WorkspaceRole): boolean {
-    return role === WorkspaceRole.ADMIN || role === WorkspaceRole.OWNER;
-  }
-
-  private parseResolutionOrder(input: unknown): ResolutionKind[] {
-    const parsed = resolutionOrderSchema.safeParse(input);
-    if (!parsed.success) {
-      return DEFAULT_RESOLUTION_ORDER;
-    }
-    return parsed.data as ResolutionKind[];
-  }
-
-  private async getEffectiveWorkspaceSettings(workspaceId: string): Promise<EffectiveWorkspaceSettings> {
-    const settings = await this.prisma.workspaceSettings.findUnique({
-      where: { workspaceId },
-    });
-    if (!settings) {
-      return {
-        resolutionOrder: DEFAULT_RESOLUTION_ORDER,
-        autoCreateProject: true,
-        githubKeyPrefix: DEFAULT_GITHUB_PREFIX,
-        localKeyPrefix: DEFAULT_LOCAL_PREFIX,
-      };
-    }
-    return {
-      resolutionOrder: this.parseResolutionOrder(settings.resolutionOrder),
-      autoCreateProject: settings.autoCreateProject,
-      githubKeyPrefix: settings.githubKeyPrefix || DEFAULT_GITHUB_PREFIX,
-      localKeyPrefix: settings.localKeyPrefix || DEFAULT_LOCAL_PREFIX,
-    };
-  }
-
-  private normalizeGithubSelector(input: ResolveProjectInput): { normalized: string; withHost?: string } | null {
-    const github = input.github_remote;
-    if (!github) {
-      return null;
-    }
-    const normalized = (github.normalized || '').trim();
-    if (normalized) {
-      const host = (github.host || '').trim().toLowerCase();
-      return host ? { normalized, withHost: `${host}/${normalized}` } : { normalized };
-    }
-    const owner = (github.owner || '').trim();
-    const repo = (github.repo || '').trim();
-    if (!owner || !repo) {
-      return null;
-    }
-    const parsed = `${owner}/${repo}`;
-    const host = (github.host || '').trim().toLowerCase();
-    return host ? { normalized: parsed, withHost: `${host}/${parsed}` } : { normalized: parsed };
-  }
-
   private async createProjectAndMapping(args: {
     workspaceId: string;
     kind: ResolutionKind;
@@ -2496,39 +3643,6 @@ export class MemoryCoreService {
     return record;
   }
 
-  private async assertRawAccess(
-    auth: AuthContext,
-    workspaceId: string,
-    projectId?: string
-  ): Promise<void> {
-    if (auth.projectAccessBypass || auth.user.envAdmin) {
-      return;
-    }
-    if (projectId) {
-      const allowed = await hasProjectAccess({
-        prisma: this.prisma,
-        auth,
-        workspaceId,
-        projectId,
-      });
-      if (!allowed) {
-        throw new AuthorizationError('Raw access requires admin or project member');
-      }
-      return;
-    }
-    const membership = await requireWorkspaceMembership({
-      prisma: this.prisma,
-      auth,
-      workspaceId,
-    });
-    if (!membership) {
-      throw new AuthorizationError('Workspace access denied');
-    }
-    if (membership.role !== WorkspaceRole.ADMIN && membership.role !== WorkspaceRole.OWNER) {
-      throw new AuthorizationError('Workspace admin role required for workspace-wide raw search');
-    }
-  }
-
   private async recordAudit(args: {
     workspaceId: string;
     workspaceKey?: string;
@@ -2547,10 +3661,49 @@ export class MemoryCoreService {
       },
     });
 
-    if (!this.auditSlackNotifier) {
-      return;
-    }
     void (async () => {
+      let resolvedTarget = target;
+      if (this.auditReasoner) {
+        try {
+          const reasonSource = typeof target.reason_source === 'string' ? target.reason_source : 'heuristic';
+          if (reasonSource !== 'user') {
+            const reasonerConfig = await getEffectiveAuditReasonerConfig({
+              prisma: this.prisma,
+              workspaceId: args.workspaceId,
+              integrationLockedProviders: this.integrationLockedProviders,
+              auditReasonerEnvConfig: this.auditReasonerEnvConfig,
+            });
+            if (reasonerConfig) {
+              const aiReason = await this.auditReasoner.generateReason(reasonerConfig, {
+                action: args.action,
+                actorUserEmail: args.actorUserEmail,
+                target,
+              });
+              if (aiReason) {
+                resolvedTarget = {
+                  ...target,
+                  reason: aiReason.reason,
+                  reason_source: 'ai',
+                  reason_provider: aiReason.provider,
+                  reason_model: aiReason.model,
+                };
+                await this.prisma.auditLog.update({
+                  where: { id: created.id },
+                  data: {
+                    target: resolvedTarget as Prisma.InputJsonValue,
+                  },
+                });
+              }
+            }
+          }
+        } catch {
+          // Ignore AI reason generation failures to keep request path non-blocking.
+        }
+      }
+
+      if (!this.auditSlackNotifier) {
+        return;
+      }
       try {
         const workspaceSlackConfig = await this.getWorkspaceSlackDeliveryConfig(args.workspaceId);
         if (!this.auditSlackNotifier!.shouldNotify(args.action, workspaceSlackConfig)) {
@@ -2563,7 +3716,7 @@ export class MemoryCoreService {
             actorUserId: args.actorUserId,
             actorUserEmail: args.actorUserEmail,
             action: args.action,
-            target,
+            target: resolvedTarget,
             createdAt: created.createdAt,
           },
           workspaceSlackConfig
@@ -2608,7 +3761,35 @@ export class MemoryCoreService {
     };
   }
 
+
   private isIntegrationLocked(provider: IntegrationProvider): boolean {
     return this.integrationLockedProviders.has(provider);
   }
+}
+
+function buildLocalEmbedding(input: string, dimensions = 256): number[] {
+  const cleaned = input.trim().toLowerCase();
+  const vector = new Array<number>(dimensions).fill(0);
+  if (!cleaned) {
+    return vector;
+  }
+  const tokens = cleaned.split(/[\s,.;:!?()[\]{}"'`<>/\\|+-]+/g).filter(Boolean);
+  for (const token of tokens) {
+    let hash = 2166136261;
+    for (let i = 0; i < token.length; i += 1) {
+      hash ^= token.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    const index = Math.abs(hash) % dimensions;
+    vector[index] += 1;
+  }
+  const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+  if (norm === 0) {
+    return vector;
+  }
+  return vector.map((value) => Number((value / norm).toFixed(6)));
+}
+
+function toVectorLiteral(vector: number[]): string {
+  return `[${vector.map((value) => Number.isFinite(value) ? value : 0).join(',')}]`;
 }

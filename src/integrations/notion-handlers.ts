@@ -1,5 +1,5 @@
 ﻿/**
- * Notion tool handlers for Context Sync MCP Server
+ * Notion tool handlers for Claustrum MCP Server
  */
 
 import type { NotionIntegration } from './notion-integration.js';
@@ -11,7 +11,7 @@ export function createNotionHandlers(notionIntegration: NotionIntegration | null
         return {
           content: [{
             type: 'text',
-            text: ' Notion is not configured. Run `context-sync setup` to configure Notion integration.',
+            text: ' Notion is not configured. Run `claustrum setup` to configure Notion integration.',
           }],
           isError: true,
         };
@@ -56,7 +56,7 @@ export function createNotionHandlers(notionIntegration: NotionIntegration | null
         return {
           content: [{
             type: 'text',
-            text: ' Notion is not configured. Run `context-sync setup` to configure Notion integration.',
+            text: ' Notion is not configured. Run `claustrum setup` to configure Notion integration.',
           }],
           isError: true,
         };
@@ -89,7 +89,7 @@ export function createNotionHandlers(notionIntegration: NotionIntegration | null
         return {
           content: [{
             type: 'text',
-            text: ' Notion is not configured. Run `context-sync setup` to configure Notion integration.',
+            text: ' Notion is not configured. Run `claustrum setup` to configure Notion integration.',
           }],
           isError: true,
         };
@@ -126,7 +126,7 @@ export function createNotionHandlers(notionIntegration: NotionIntegration | null
         return {
           content: [{
             type: 'text',
-            text: ' Notion is not configured. Run `context-sync setup` to configure Notion integration.',
+            text: ' Notion is not configured. Run `claustrum setup` to configure Notion integration.',
           }],
           isError: true,
         };
@@ -159,7 +159,7 @@ export function createNotionHandlers(notionIntegration: NotionIntegration | null
         return {
           content: [{
             type: 'text',
-            text: ' Notion is not configured. Run `context-sync setup` to configure Notion integration.',
+            text: ' Notion is not configured. Run `claustrum setup` to configure Notion integration.',
           }],
           isError: true,
         };
@@ -207,7 +207,7 @@ export function createNotionHandlers(notionIntegration: NotionIntegration | null
         return {
           content: [{
             type: 'text',
-            text: ' Notion is not configured. Run `context-sync setup` to configure Notion integration.',
+            text: ' Notion is not configured. Run `claustrum setup` to configure Notion integration.',
           }],
           isError: true,
         };

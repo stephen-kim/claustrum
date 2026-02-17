@@ -1,5 +1,13 @@
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent';
-export type IntegrationProviderKey = 'notion' | 'jira' | 'confluence' | 'linear' | 'slack';
+export type IntegrationProviderKey =
+  | 'notion'
+  | 'jira'
+  | 'confluence'
+  | 'linear'
+  | 'slack'
+  | 'audit_reasoner';
+export type AuditReasonerProvider = 'openai' | 'claude' | 'gemini';
+const AUDIT_REASONER_PROVIDER_ORDER_DEFAULT: AuditReasonerProvider[] = ['openai', 'claude', 'gemini'];
 
 export type MemoryCoreConfig = {
   port: number;
@@ -24,7 +32,20 @@ export type MemoryCoreConfig = {
   confluenceApiToken?: string;
   linearApiKey?: string;
   linearApiUrl?: string;
+  auditReasonerEnabled: boolean;
+  auditReasonerPreferEnv: boolean;
+  auditReasonerProviderOrder: AuditReasonerProvider[];
+  auditReasonerOpenAiModel?: string;
+  auditReasonerOpenAiApiKey?: string;
+  auditReasonerOpenAiBaseUrl?: string;
+  auditReasonerClaudeModel?: string;
+  auditReasonerClaudeApiKey?: string;
+  auditReasonerClaudeBaseUrl?: string;
+  auditReasonerGeminiModel?: string;
+  auditReasonerGeminiApiKey?: string;
+  auditReasonerGeminiBaseUrl?: string;
   integrationLockedProviders: IntegrationProviderKey[];
+  integrationIgnoreEnv: boolean;
 };
 
 export function loadConfig(): MemoryCoreConfig {
@@ -36,6 +57,13 @@ export function loadConfig(): MemoryCoreConfig {
   }
 
   const rawKeys = parseApiKeys();
+  const auditReasonerProviderOrder = parseAuditReasonerProviderOrder();
+  const openAiApiKey = parseOpenAiApiKey(auditReasonerProviderOrder);
+  const claudeApiKey = parseClaudeApiKey(auditReasonerProviderOrder);
+  const geminiApiKey = parseGeminiApiKey(auditReasonerProviderOrder);
+  const integrationLockPolicy = parseIntegrationLockPolicy(
+    process.env.MEMORY_CORE_INTEGRATION_LOCKED_PROVIDERS
+  );
 
   return {
     port: Number(process.env.MEMORY_CORE_PORT || 8080),
@@ -65,9 +93,25 @@ export function loadConfig(): MemoryCoreConfig {
     confluenceApiToken: (process.env.MEMORY_CORE_CONFLUENCE_API_TOKEN || '').trim() || undefined,
     linearApiKey: (process.env.MEMORY_CORE_LINEAR_API_KEY || '').trim() || undefined,
     linearApiUrl: (process.env.MEMORY_CORE_LINEAR_API_URL || '').trim() || undefined,
-    integrationLockedProviders: parseLockedProviders(
-      process.env.MEMORY_CORE_INTEGRATION_LOCKED_PROVIDERS
+    auditReasonerEnabled: parseAuditReasonerEnabled(
+      auditReasonerProviderOrder,
+      openAiApiKey,
+      claudeApiKey,
+      geminiApiKey
     ),
+    auditReasonerPreferEnv: parseAuditReasonerPreferEnv(),
+    auditReasonerProviderOrder,
+    auditReasonerOpenAiModel: parseProviderModel('openai', auditReasonerProviderOrder),
+    auditReasonerOpenAiApiKey: openAiApiKey,
+    auditReasonerOpenAiBaseUrl: parseProviderBaseUrl('openai', auditReasonerProviderOrder),
+    auditReasonerClaudeModel: parseProviderModel('claude', auditReasonerProviderOrder),
+    auditReasonerClaudeApiKey: claudeApiKey,
+    auditReasonerClaudeBaseUrl: parseProviderBaseUrl('claude', auditReasonerProviderOrder),
+    auditReasonerGeminiModel: parseProviderModel('gemini', auditReasonerProviderOrder),
+    auditReasonerGeminiApiKey: geminiApiKey,
+    auditReasonerGeminiBaseUrl: parseProviderBaseUrl('gemini', auditReasonerProviderOrder),
+    integrationLockedProviders: integrationLockPolicy.lockedProviders,
+    integrationIgnoreEnv: integrationLockPolicy.ignoreEnv,
   };
 }
 
@@ -107,17 +151,220 @@ function parseSlackFormat(input?: string): 'compact' | 'detailed' {
   return (input || '').trim().toLowerCase() === 'compact' ? 'compact' : 'detailed';
 }
 
-function parseLockedProviders(input?: string): IntegrationProviderKey[] {
-  const supported = new Set<IntegrationProviderKey>([
+function parseIntegrationLockPolicy(input?: string): {
+  lockedProviders: IntegrationProviderKey[];
+  ignoreEnv: boolean;
+} {
+  const allProviders: IntegrationProviderKey[] = [
     'notion',
     'jira',
     'confluence',
     'linear',
     'slack',
-  ]);
-  const values = (input || '')
+    'audit_reasoner',
+  ];
+  const supported = new Set<IntegrationProviderKey>(allProviders);
+  const raw = (input || '')
     .split(',')
     .map((value) => value.trim().toLowerCase())
-    .filter((value): value is IntegrationProviderKey => supported.has(value as IntegrationProviderKey));
-  return Array.from(new Set(values));
+    .filter(Boolean);
+
+  if (raw.includes('none')) {
+    return { lockedProviders: [], ignoreEnv: true };
+  }
+  if (raw.includes('all')) {
+    return { lockedProviders: allProviders, ignoreEnv: false };
+  }
+
+  const values = raw.filter((value): value is IntegrationProviderKey =>
+    supported.has(value as IntegrationProviderKey)
+  );
+  return { lockedProviders: Array.from(new Set(values)), ignoreEnv: false };
+}
+
+function parseAuditReasonerProviderOrder(): AuditReasonerProvider[] {
+  const explicitList = (process.env.MEMORY_CORE_AUDIT_REASONER_PROVIDER_ORDER || '')
+    .split(',')
+    .map((value) => normalizeAuditReasonerProvider(value))
+    .filter((value): value is AuditReasonerProvider => Boolean(value));
+  if (explicitList.length > 0) {
+    return Array.from(new Set(explicitList));
+  }
+
+  const legacySingle = normalizeAuditReasonerProvider(process.env.MEMORY_CORE_AUDIT_REASONER_PROVIDER || '');
+  if (legacySingle) {
+    return [legacySingle];
+  }
+
+  const inferred = AUDIT_REASONER_PROVIDER_ORDER_DEFAULT.filter((provider) =>
+    Boolean(providerApiKeyFromEnv(provider))
+  );
+  if (inferred.length > 0) {
+    return inferred;
+  }
+
+  return [...AUDIT_REASONER_PROVIDER_ORDER_DEFAULT];
+}
+
+function parseOpenAiApiKey(providerOrder: AuditReasonerProvider[]): string | undefined {
+  return parseProviderApiKey('openai', providerOrder);
+}
+
+function parseClaudeApiKey(providerOrder: AuditReasonerProvider[]): string | undefined {
+  return parseProviderApiKey('claude', providerOrder);
+}
+
+function parseGeminiApiKey(providerOrder: AuditReasonerProvider[]): string | undefined {
+  return parseProviderApiKey('gemini', providerOrder);
+}
+
+function parseProviderApiKey(
+  provider: AuditReasonerProvider,
+  providerOrder: AuditReasonerProvider[]
+): string | undefined {
+  const names =
+    provider === 'openai'
+      ? ['MEMORY_CORE_AUDIT_REASONER_OPENAI_API_KEY', 'OPENAI_API_KEY']
+      : provider === 'claude'
+        ? [
+            'MEMORY_CORE_AUDIT_REASONER_CLAUDE_API_KEY',
+            'MEMORY_CORE_CLAUDE_API_KEY',
+            'ANTHROPIC_API_KEY',
+            'CLAUDE_API_KEY',
+          ]
+        : ['MEMORY_CORE_AUDIT_REASONER_GEMINI_API_KEY', 'GEMINI_API_KEY'];
+
+  for (const name of names) {
+    const value = (process.env[name] || '').trim();
+    if (value) {
+      return value;
+    }
+  }
+
+  const legacyGeneric = (process.env.MEMORY_CORE_AUDIT_REASONER_API_KEY || '').trim();
+  if (legacyGeneric && providerOrder[0] === provider) {
+    return legacyGeneric;
+  }
+  return undefined;
+}
+
+function parseProviderModel(
+  provider: AuditReasonerProvider,
+  providerOrder: AuditReasonerProvider[]
+): string | undefined {
+  const names =
+    provider === 'openai'
+      ? ['MEMORY_CORE_AUDIT_REASONER_OPENAI_MODEL']
+      : provider === 'claude'
+        ? ['MEMORY_CORE_AUDIT_REASONER_CLAUDE_MODEL']
+        : ['MEMORY_CORE_AUDIT_REASONER_GEMINI_MODEL'];
+
+  for (const name of names) {
+    const value = (process.env[name] || '').trim();
+    if (value) {
+      return value;
+    }
+  }
+
+  const legacyGeneric = (process.env.MEMORY_CORE_AUDIT_REASONER_MODEL || '').trim();
+  if (legacyGeneric && providerOrder[0] === provider) {
+    return legacyGeneric;
+  }
+  return undefined;
+}
+
+function parseProviderBaseUrl(
+  provider: AuditReasonerProvider,
+  providerOrder: AuditReasonerProvider[]
+): string | undefined {
+  const names =
+    provider === 'openai'
+      ? ['MEMORY_CORE_AUDIT_REASONER_OPENAI_BASE_URL']
+      : provider === 'claude'
+        ? ['MEMORY_CORE_AUDIT_REASONER_CLAUDE_BASE_URL']
+        : ['MEMORY_CORE_AUDIT_REASONER_GEMINI_BASE_URL'];
+
+  for (const name of names) {
+    const value = (process.env[name] || '').trim();
+    if (value) {
+      return value;
+    }
+  }
+
+  const legacyGeneric = (process.env.MEMORY_CORE_AUDIT_REASONER_BASE_URL || '').trim();
+  if (legacyGeneric && providerOrder[0] === provider) {
+    return legacyGeneric;
+  }
+  return undefined;
+}
+
+function providerApiKeyFromEnv(provider: AuditReasonerProvider): string | undefined {
+  if (provider === 'openai') {
+    return (process.env.MEMORY_CORE_AUDIT_REASONER_OPENAI_API_KEY || process.env.OPENAI_API_KEY || '').trim() || undefined;
+  }
+  if (provider === 'claude') {
+    return (
+      process.env.MEMORY_CORE_AUDIT_REASONER_CLAUDE_API_KEY ||
+      process.env.MEMORY_CORE_CLAUDE_API_KEY ||
+      process.env.ANTHROPIC_API_KEY ||
+      process.env.CLAUDE_API_KEY ||
+      ''
+    ).trim() || undefined;
+  }
+  return (process.env.MEMORY_CORE_AUDIT_REASONER_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '').trim() || undefined;
+}
+
+function normalizeAuditReasonerProvider(input: string): AuditReasonerProvider | undefined {
+  const value = input.trim().toLowerCase();
+  if (value === 'openai' || value === 'claude' || value === 'gemini') {
+    return value;
+  }
+  return undefined;
+}
+
+function parseAuditReasonerEnabled(
+  providerOrder: AuditReasonerProvider[],
+  openAiApiKey?: string,
+  claudeApiKey?: string,
+  geminiApiKey?: string
+): boolean {
+  if (process.env.MEMORY_CORE_AUDIT_REASONER_ENABLED !== undefined) {
+    return parseBoolean(process.env.MEMORY_CORE_AUDIT_REASONER_ENABLED);
+  }
+  const hasAnyConfigured = providerOrder.some((provider) => {
+    if (provider === 'openai') {
+      return Boolean(openAiApiKey);
+    }
+    if (provider === 'claude') {
+      return Boolean(claudeApiKey);
+    }
+    return Boolean(geminiApiKey);
+  });
+  return hasAnyConfigured;
+}
+
+function parseAuditReasonerPreferEnv(): boolean {
+  const explicitVars = [
+    'MEMORY_CORE_AUDIT_REASONER_ENABLED',
+    'MEMORY_CORE_AUDIT_REASONER_PROVIDER_ORDER',
+    'MEMORY_CORE_AUDIT_REASONER_PROVIDER',
+    'MEMORY_CORE_AUDIT_REASONER_MODEL',
+    'MEMORY_CORE_AUDIT_REASONER_API_KEY',
+    'MEMORY_CORE_AUDIT_REASONER_BASE_URL',
+    'MEMORY_CORE_AUDIT_REASONER_OPENAI_MODEL',
+    'MEMORY_CORE_AUDIT_REASONER_OPENAI_API_KEY',
+    'MEMORY_CORE_AUDIT_REASONER_OPENAI_BASE_URL',
+    'MEMORY_CORE_AUDIT_REASONER_CLAUDE_MODEL',
+    'MEMORY_CORE_AUDIT_REASONER_CLAUDE_API_KEY',
+    'MEMORY_CORE_AUDIT_REASONER_CLAUDE_BASE_URL',
+    'MEMORY_CORE_AUDIT_REASONER_GEMINI_MODEL',
+    'MEMORY_CORE_AUDIT_REASONER_GEMINI_API_KEY',
+    'MEMORY_CORE_AUDIT_REASONER_GEMINI_BASE_URL',
+    'OPENAI_API_KEY',
+    'ANTHROPIC_API_KEY',
+    'CLAUDE_API_KEY',
+    'GEMINI_API_KEY',
+    'MEMORY_CORE_CLAUDE_API_KEY',
+  ];
+  return explicitVars.some((name) => process.env[name] !== undefined && process.env[name] !== '');
 }

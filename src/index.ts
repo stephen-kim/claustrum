@@ -18,13 +18,13 @@ async function main() {
   
   // Handle graceful shutdown
   process.on('SIGINT', () => {
-    logger.info('Shutting down Context Sync...');
+    logger.info('Shutting down Claustrum...');
     server.close();
     process.exit(0);
   });
 
   process.on('SIGTERM', () => {
-    logger.info('Shutting down Context Sync...');
+    logger.info('Shutting down Claustrum...');
     server.close();
     process.exit(0);
   });
@@ -33,6 +33,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  logger.error('Failed to start Context Sync:', error);
+  logger.error('Failed to start Claustrum:', error);
   process.exit(1);
 });

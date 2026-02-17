@@ -1,28 +1,28 @@
 {
-  "name": "@context-sync/server",
+  "name": "@claustrum/server",
   "version": "2.0.0",
-  "description": "Universal Context layer McP server",
+  "description": "Claustrum monorepo: shared memory layer for AI systems",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "context-sync": "./dist/index.js",
-    "context-sync-setup": "./bin/setup.cjs"
+    "claustrum": "./dist/index.js",
+    "claustrum-setup": "./bin/setup.cjs"
   },
   "scripts": {
-    "build": "npm run build:context-sync",
-    "build:context-sync": "tsc",
-    "build:workspace": "pnpm -r --filter @context-sync/shared --filter @context-sync/memory-core --filter @context-sync/mcp-adapter --filter @context-sync/admin-ui build",
-    "prepare": "npm run build:context-sync",
+    "build": "npm run build:claustrum",
+    "build:claustrum": "tsc",
+    "build:workspace": "pnpm -r --filter @claustrum/shared --filter @claustrum/memory-core --filter @claustrum/mcp-adapter --filter @claustrum/admin-ui build",
+    "prepare": "npm run build:claustrum",
     "postinstall": "node bin/install.cjs || true",
-    "preinstall": "node -e \"console.log('\\n🧠 Installing Context Sync MCP Server...\\n')\"",
+    "preinstall": "node -e \"console.log('\\n🧠 Installing Claustrum...\\n')\"",
     "setup": "node bin/setup.cjs",
-    "db:migrate": "pnpm --filter @context-sync/memory-core db:migrate",
-    "db:seed": "pnpm --filter @context-sync/memory-core db:seed",
-    "db:migrate:context-sync": "node dist/db-migrate.js",
+    "db:migrate": "pnpm --filter @claustrum/memory-core db:migrate",
+    "db:seed": "pnpm --filter @claustrum/memory-core db:seed",
+    "db:migrate:claustrum": "node dist/db-migrate.js",
     "db:migrate:dev": "npm run build && node dist/db-migrate.js",
-    "dev": "pnpm --filter @context-sync/shared build && pnpm -r --parallel --filter @context-sync/shared --filter @context-sync/memory-core --filter @context-sync/mcp-adapter --filter @context-sync/admin-ui dev",
-    "dev:context-sync": "tsx src/index.ts",
+    "dev": "pnpm --filter @claustrum/shared build && pnpm -r --parallel --filter @claustrum/shared --filter @claustrum/memory-core --filter @claustrum/mcp-adapter --filter @claustrum/admin-ui dev",
+    "dev:claustrum": "tsx src/index.ts",
     "compose:up": "docker compose up -d",
     "compose:up:localdb": "docker compose --profile localdb up -d",
     "compose:down": "docker compose down",
@@ -33,11 +33,11 @@
     "start": "node dist/index.js",
     "watch": "tsx watch src/index.ts",
     "test": "node scripts/smoke-test.cjs",
-    "test:workspace": "pnpm -r --filter @context-sync/shared --filter @context-sync/memory-core --filter @context-sync/mcp-adapter --filter @context-sync/admin-ui test",
+    "test:workspace": "pnpm -r --filter @claustrum/shared --filter @claustrum/memory-core --filter @claustrum/mcp-adapter --filter @claustrum/admin-ui test",
     "prepublishOnly": "npm run build && npm test"
   },
   "keywords": [
-    "Context Sync",
+    "Claustrum",
     "Context Management",
     "mcp",
     "mcp-server",
@@ -75,12 +75,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/Intina47/context-sync.git"
+    "url": "git+https://github.com/stephen-kim/claustrum.git"
   },
   "bugs": {
-    "url": "https://github.com/Intina47/context-sync/issues"
+    "url": "https://github.com/stephen-kim/claustrum/issues"
   },
-  "homepage": "https://github.com/Intina47/context-sync#readme",
+  "homepage": "https://github.com/stephen-kim/claustrum#readme",
   "files": [
     "dist/**/*",
     "bin/**/*",

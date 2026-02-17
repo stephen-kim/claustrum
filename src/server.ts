@@ -1,5 +1,5 @@
 ﻿/**
- * Context Sync Server - Core Simplification
+ * Claustrum Server - Core Simplification
  * 8 essential tools, everything else is internal
  */
 
@@ -72,7 +72,7 @@ export class ContextSyncServer {
 
     this.server = new Server(
       {
-        name: 'context-sync',
+        name: 'claustrum',
         version: '2.0.0',
       },
       {
@@ -92,7 +92,7 @@ export class ContextSyncServer {
    */
   private async initializeNotion(): Promise<void> {
     try {
-      const configPath = path.join(os.homedir(), '.context-sync', 'config.json');
+      const configPath = path.join(os.homedir(), '.claustrum', 'config.json');
       const configData = await fs.readFile(configPath, 'utf-8');
       const config = JSON.parse(configData);
       

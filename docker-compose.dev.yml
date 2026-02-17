@@ -4,18 +4,18 @@ services:
   postgres:
     profiles: ["localdb"]
     image: postgres:16-alpine
-    container_name: context-sync-postgres
+    container_name: claustrum-postgres
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-context_sync}
-      POSTGRES_USER: ${POSTGRES_USER:-context_sync}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-context_sync}
+      POSTGRES_DB: ${POSTGRES_DB:-claustrum}
+      POSTGRES_USER: ${POSTGRES_USER:-claustrum}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-claustrum}
     volumes:
-      - context_sync_postgres:/var/lib/postgresql/data
+      - claustrum_postgres:/var/lib/postgresql/data
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-context_sync} -d ${POSTGRES_DB:-context_sync}",
+          "pg_isready -U ${POSTGRES_USER:-claustrum} -d ${POSTGRES_DB:-claustrum}",
         ]
       interval: 5s
       timeout: 5s
@@ -25,7 +25,7 @@ services:
     build:
       context: .
       dockerfile: apps/memory-core/Dockerfile
-    container_name: context-sync-memory-core
+    container_name: claustrum-memory-core
     environment:
       DATABASE_URL: ${DATABASE_URL}
       MEMORY_CORE_HOST: ${MEMORY_CORE_HOST:-0.0.0.0}
@@ -62,7 +62,7 @@ services:
     build:
       context: .
       dockerfile: apps/mcp-adapter/Dockerfile
-    container_name: context-sync-mcp-adapter
+    container_name: claustrum-mcp-adapter
     environment:
       MEMORY_CORE_URL: ${MEMORY_CORE_URL:-http://memory-core:8080}
       MEMORY_CORE_API_KEY: ${MEMORY_CORE_API_KEY}
@@ -79,7 +79,7 @@ services:
     build:
       context: .
       dockerfile: apps/admin-ui/Dockerfile
-    container_name: context-sync-admin-ui
+    container_name: claustrum-admin-ui
     environment:
       NEXT_PUBLIC_MEMORY_CORE_URL: ${NEXT_PUBLIC_MEMORY_CORE_URL}
     depends_on:
@@ -89,4 +89,4 @@ services:
       - "${ADMIN_UI_PORT:-3000}:3000"
 
 volumes:
-  context_sync_postgres:
+  claustrum_postgres:

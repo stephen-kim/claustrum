@@ -24,7 +24,7 @@ function log(color, message) {
   console.error(color + message + colors.reset);
 }
 
-const CONFIG_DIR = path.join(os.homedir(), '.context-sync');
+const CONFIG_DIR = path.join(os.homedir(), '.claustrum');
 const STATUS_FILE = path.join(CONFIG_DIR, 'install-status.json');
 
 // Get version from package.json
@@ -46,20 +46,20 @@ const version = getVersion();
 
 // ALWAYS show banner - use process.stdout.write to bypass npm suppression
 process.stdout.write('\n' + '='.repeat(80) + '\n');
-process.stdout.write('\x1b[36m\x1b[1m Context Sync MCP Server v' + version + '\x1b[0m\n');
+process.stdout.write('\x1b[36m\x1b[1m Claustrum MCP Server v' + version + '\x1b[0m\n');
 process.stdout.write('='.repeat(80) + '\n\n');
 
 if (!isGlobalInstall) {
   log(colors.yellow, '  Detected local installation.');
   log(colors.yellow, 'For automatic setup, install globally:\n');
-  log(colors.reset, '  npm install -g @context-sync/server\n');
+  log(colors.reset, '  npm install -g @claustrum/server\n');
   log(colors.gray, 'Skipping automatic configuration.\n');
   
   // Still show Notion message even for local installs
   log(colors.cyan + colors.bold, ' NEW: Notion Integration Available!\n');
   log(colors.gray, ' Sync your AI context directly to Notion:\n');
   log(colors.green + colors.bold, ' To set up, run:\n');
-  log(colors.cyan + colors.bold, '   npx context-sync-setup\n');
+  log(colors.cyan + colors.bold, '   npx claustrum-setup\n');
   
   process.exit(0);
 }
@@ -73,11 +73,11 @@ log(colors.gray, ' Locating installed package...');
 let packagePath;
 try {
   const npmRoot = execSync('npm root -g', { encoding: 'utf8' }).trim();
-  packagePath = path.join(npmRoot, '@context-sync', 'server', 'dist', 'index.js');
+  packagePath = path.join(npmRoot, '@claustrum', 'server', 'dist', 'index.js');
   
   // Fallback for non-scoped package name
   if (!fs.existsSync(packagePath)) {
-    packagePath = path.join(npmRoot, 'context-sync-mcp', 'dist', 'index.js');
+    packagePath = path.join(npmRoot, 'claustrum-mcp', 'dist', 'index.js');
   }
 } catch (error) {
   log(colors.red, ' Could not locate package');
@@ -98,7 +98,7 @@ log(colors.green, ` Package found: ${packagePath}\n`);
 // UNIVERSAL AI PLATFORM AUTO-CONFIGURATION
 // ============================================================================
 log(colors.cyan + colors.bold, ' Universal AI Platform Auto-Configuration\n');
-log(colors.gray, 'Context Sync will now automatically detect and configure all installed AI platforms...\n');
+log(colors.gray, 'Claustrum will now automatically detect and configure all installed AI platforms...\n');
 
 // ============================================================================
 // SETUP WIZARD INTEGRATION
@@ -106,7 +106,7 @@ log(colors.gray, 'Context Sync will now automatically detect and configure all i
 async function runSetupWizard() {
   try {
     // Check if Notion is already configured
-    const configPath = path.join(os.homedir(), '.context-sync', 'config.json');
+    const configPath = path.join(os.homedir(), '.claustrum', 'config.json');
     let skipWizard = false;
     
     if (fs.existsSync(configPath)) {
@@ -120,7 +120,7 @@ async function runSetupWizard() {
           }
           log(colors.gray, '\n To reconfigure Notion integration:');
           log(colors.gray, '   Edit: ' + configPath);
-          log(colors.gray, '   Or reinstall: npm install -g @context-sync/server\n');
+          log(colors.gray, '   Or reinstall: npm install -g @claustrum/server\n');
           skipWizard = true;
         }
       } catch (error) {
@@ -137,7 +137,7 @@ async function runSetupWizard() {
     console.error('\n' + ''.repeat(80));
     log(colors.cyan + colors.bold, ' NEW: Notion Integration Available!');
     console.error(''.repeat(80));
-    log(colors.gray, '\n Context Sync can now sync your AI context directly to Notion:\n');
+    log(colors.gray, '\n Claustrum can now sync your AI context directly to Notion:\n');
     
     log(colors.white, '    Generate feature docs and export to Notion');
     log(colors.white, '    Pull project specs from Notion for AI to implement');
@@ -145,8 +145,8 @@ async function runSetupWizard() {
     log(colors.white, '    Create beautifully formatted pages automatically\n');
     
     log(colors.green + colors.bold, ' To set up Notion integration, run:\n');
-    log(colors.cyan + colors.bold, '   context-sync-setup\n');
-    log(colors.gray, '   (or: npx context-sync-setup)\n');
+    log(colors.cyan + colors.bold, '   claustrum-setup\n');
+    log(colors.gray, '   (or: npx claustrum-setup)\n');
     
     log(colors.gray, '   The interactive wizard will guide you through connecting Notion.');
     console.error(''.repeat(80) + '\n');
@@ -220,7 +220,7 @@ async function runAutoConfiguration() {
             log(colors.cyan, ' Claude Desktop:');
             log(colors.reset, '   1. Restart Claude Desktop completely');
             log(colors.reset, '   2. Open a new chat');
-            log(colors.reset, '   3. Type: ' + colors.gray + '"help context-sync"' + colors.reset);
+            log(colors.reset, '   3. Type: ' + colors.gray + '"help claustrum"' + colors.reset);
             log(colors.reset, '   4. Follow the guided setup!\n');
             break;
 
@@ -228,7 +228,7 @@ async function runAutoConfiguration() {
             log(colors.cyan, '  Cursor IDE:');
             log(colors.reset, '   1. Restart Cursor IDE');
             log(colors.reset, '   2. Open Copilot Chat (Ctrl+Shift+I / Cmd+Shift+I)');
-            log(colors.reset, '   3. Look for context-sync in Tools list');
+            log(colors.reset, '   3. Look for claustrum in Tools list');
             log(colors.reset, '   4. Start syncing context!\n');
             break;
 
@@ -237,7 +237,7 @@ async function runAutoConfiguration() {
             log(colors.reset, '   1. Restart VS Code completely');
             log(colors.reset, '   2. Open Copilot Chat (Ctrl+Shift+I / Cmd+Shift+I)');
             log(colors.reset, '   3. Switch to Agent mode');
-            log(colors.reset, '   4. Look for context-sync in Tools list');
+            log(colors.reset, '   4. Look for claustrum in Tools list');
             log(colors.reset, '   5. Start syncing context!\n');
             break;
 
@@ -245,27 +245,27 @@ async function runAutoConfiguration() {
             log(colors.cyan, ' Continue.dev:');
             log(colors.reset, '   1. Restart VS Code');
             log(colors.reset, '   2. Open Continue chat panel');
-            log(colors.reset, '   3. Context Sync should be available as MCP tool');
-            log(colors.reset, '   4. Try: "help context-sync"\n');
+            log(colors.reset, '   3. Claustrum should be available as MCP tool');
+            log(colors.reset, '   4. Try: "help claustrum"\n');
             break;
 
           default:
             log(colors.cyan, ` ${platformId}:`);
             log(colors.reset, '   1. Restart the application');
-            log(colors.reset, '   2. Look for context-sync in MCP/Tools menu');
-            log(colors.reset, '   3. Try: "help context-sync"\n');
+            log(colors.reset, '   2. Look for claustrum in MCP/Tools menu');
+            log(colors.reset, '   3. Try: "help claustrum"\n');
             break;
         }
       });
 
-      log(colors.green + colors.bold, ' Context Sync is now your universal AI memory layer!\n');
+      log(colors.green + colors.bold, ' Claustrum is now your universal AI memory layer!\n');
       log(colors.reset, ' All configured platforms share the same persistent context and memory.');
       log(colors.reset, ' Switch between platforms seamlessly with full context preservation.\n');
     } else {
       log(colors.yellow, '  No AI platforms were auto-configured.');
       log(colors.reset, '\nTo get started:');
       log(colors.reset, '1. Install an AI platform that supports MCP (Claude Desktop, Cursor, VS Code + Copilot)');
-      log(colors.reset, '2. Re-run: npm install -g @context-sync/server');
+      log(colors.reset, '2. Re-run: npm install -g @claustrum/server');
       log(colors.reset, '3. Auto-configuration will detect and configure it automatically!\n');
       
       printManualInstructions(packagePath);
@@ -278,8 +278,8 @@ async function runAutoConfiguration() {
     // Run the setup wizard for additional integrations (Notion, etc.)
     await runSetupWizard();
 
-    log(colors.reset, ' Documentation: ' + colors.cyan + 'https://github.com/Intina47/context-sync');
-    log(colors.reset, ' Issues: ' + colors.cyan + 'https://github.com/Intina47/context-sync/issues');
+    log(colors.reset, ' Documentation: ' + colors.cyan + 'https://github.com/Intina47/claustrum');
+    log(colors.reset, ' Issues: ' + colors.cyan + 'https://github.com/Intina47/claustrum/issues');
     log(colors.reset, '\n Happy coding with universal AI context!\n');
 
   } catch (error) {
@@ -325,16 +325,16 @@ function setupClaudeDesktop(configPath, packagePath) {
     }
 
     // Check if already configured
-    if (config.mcpServers['context-sync']) {
+    if (config.mcpServers['claustrum']) {
       return {
         success: false,
-        message: 'Already configured. Current config:\n' + JSON.stringify(config.mcpServers['context-sync'], null, 2)
+        message: 'Already configured. Current config:\n' + JSON.stringify(config.mcpServers['claustrum'], null, 2)
       };
     }
 
-    // Add Context Sync configuration
-    log(colors.gray, '   Adding Context Sync to configuration...');
-    config.mcpServers['context-sync'] = {
+    // Add Claustrum configuration
+    log(colors.gray, '   Adding Claustrum to configuration...');
+    config.mcpServers['claustrum'] = {
       command: 'node',
       args: [packagePath]
     };
@@ -407,16 +407,16 @@ function setupVSCode(mcpPath, packagePath) {
     }
 
     // Check if already configured
-    if (mcpConfig.servers['context-sync']) {
+    if (mcpConfig.servers['claustrum']) {
       return {
         success: false,
         message: 'Already configured in VS Code MCP settings'
       };
     }
 
-    // Add Context Sync configuration
-    log(colors.gray, '   Adding Context Sync to MCP configuration...');
-    mcpConfig.servers['context-sync'] = {
+    // Add Claustrum configuration
+    log(colors.gray, '   Adding Claustrum to MCP configuration...');
+    mcpConfig.servers['claustrum'] = {
       command: 'node',
       args: [packagePath],
       type: 'stdio'
@@ -455,9 +455,9 @@ function printManualInstructions(pkgPath) {
   log(colors.reset, '3. Add this configuration:\n');
   log(colors.gray, '{');
   log(colors.gray, '  "mcpServers": {');
-  log(colors.gray, '    "context-sync": {');
+  log(colors.gray, '    "claustrum": {');
   log(colors.gray, '      "command": "node",');
-  log(colors.gray, `      "args": ["${pkgPath || '/path/to/context-sync/dist/index.js'}"]`);
+  log(colors.gray, `      "args": ["${pkgPath || '/path/to/claustrum/dist/index.js'}"]`);
   log(colors.gray, '    }');
   log(colors.gray, '  }');
   log(colors.gray, '}\n');
@@ -468,9 +468,9 @@ function printManualInstructions(pkgPath) {
   log(colors.reset, '2. Add this configuration:\n');
   log(colors.gray, '{');
   log(colors.gray, '  "servers": {');
-  log(colors.gray, '    "context-sync": {');
+  log(colors.gray, '    "claustrum": {');
   log(colors.gray, '      "command": "node",');
-  log(colors.gray, `      "args": ["${pkgPath || '/path/to/context-sync/dist/index.js'}"],`);
+  log(colors.gray, `      "args": ["${pkgPath || '/path/to/claustrum/dist/index.js'}"],`);
   log(colors.gray, '      "type": "stdio"');
   log(colors.gray, '    }');
   log(colors.gray, '  },');

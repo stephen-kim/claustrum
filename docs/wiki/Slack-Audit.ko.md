@@ -59,12 +59,12 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
     "config": {
       "webhook_url": "https://hooks.slack.com/services/XXX/YYY/ZZZ",
       "default_channel": "#audit-core",
-      "action_prefixes": ["integration.", "workspace_settings.", "git."],
+      "action_prefixes": ["integration.", "workspace_settings.", "git.", "ci."],
       "format": "detailed",
       "include_target_json": true,
       "mask_secrets": true,
       "routes": [
-        { "action_prefix": "git.", "channel": "#audit-devflow", "min_severity": "medium" },
+        { "action_prefix": "ci.", "channel": "#audit-devflow", "min_severity": "medium" },
         { "action_prefix": "integration.", "channel": "#audit-security", "min_severity": "high" }
       ],
       "severity_rules": [
@@ -110,6 +110,9 @@ severity 값:
 ## env vs Admin UI 우선순위
 
 - 기본: Admin UI 워크스페이스 설정이 env fallback보다 우선합니다.
+- 예외: `audit_reasoner`는 `ENV > Admin UI` 우선순위를 사용합니다.
+  - env 키: `MEMORY_CORE_AUDIT_REASONER_*`, `OPENAI_API_KEY`, `GEMINI_API_KEY`
+  - Admin UI fallback: Integrations -> Audit Reasoner
 - 잠금 옵션:
   - `MEMORY_CORE_INTEGRATION_LOCKED_PROVIDERS=slack`
   - 잠금 시 Admin UI 수정이 거부되고 env-only 모드가 강제됩니다.

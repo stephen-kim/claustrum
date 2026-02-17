@@ -1,8 +1,12 @@
 import { IntegrationProvider, Prisma } from '@prisma/client';
-import type { SlackRouteRule, SlackSeverity, SlackSeverityRule } from '../audit-slack-notifier.js';
+import type {
+  SlackRouteRule,
+  SlackSeverity,
+  SlackSeverityRule,
+} from '../integrations/audit-slack-notifier.js';
 
 export function toIntegrationProvider(
-  provider: 'notion' | 'jira' | 'confluence' | 'linear' | 'slack'
+  provider: 'notion' | 'jira' | 'confluence' | 'linear' | 'slack' | 'audit_reasoner'
 ): IntegrationProvider {
   if (provider === 'notion') {
     return IntegrationProvider.notion;
@@ -19,6 +23,9 @@ export function toIntegrationProvider(
   if (provider === 'slack') {
     return IntegrationProvider.slack;
   }
+  if (provider === 'audit_reasoner') {
+    return IntegrationProvider.audit_reasoner;
+  }
   throw new Error(`Unsupported integration provider: ${provider}`);
 }
 
@@ -33,11 +40,20 @@ export function toIntegrationSummary(args: {
   configuredFromEnv: boolean;
   notionWriteEnabled: boolean;
   locked?: boolean;
+  envConfig?: Record<string, unknown>;
 }) {
-  const { provider, row, configuredFromEnv, notionWriteEnabled, locked = false } = args;
+  const {
+    provider,
+    row,
+    configuredFromEnv,
+    notionWriteEnabled,
+    locked = false,
+    envConfig = {},
+  } = args;
   const effectiveRow = locked ? undefined : row;
   const config = toJsonObject(effectiveRow?.config);
   const source = effectiveRow ? 'workspace' : configuredFromEnv ? 'env' : 'none';
+  const effectiveConfig = source === 'workspace' ? config : envConfig;
   if (provider === IntegrationProvider.notion) {
     const token = getConfigString(config, 'token');
     const parentPageId = getConfigString(config, 'default_parent_page_id');
@@ -93,14 +109,14 @@ export function toIntegrationSummary(args: {
     };
   }
   if (provider === IntegrationProvider.slack) {
-    const webhookUrl = getConfigString(config, 'webhook_url');
-    const actionPrefixes = getConfigStringArray(config, 'action_prefixes');
-    const defaultChannel = getConfigString(config, 'default_channel');
-    const format = getConfigString(config, 'format');
-    const includeTargetJson = getConfigBoolean(config, 'include_target_json');
-    const maskSecrets = getConfigBoolean(config, 'mask_secrets');
-    const routes = getConfigSlackRoutes(config, 'routes');
-    const severityRules = getConfigSlackSeverityRules(config, 'severity_rules');
+    const webhookUrl = getConfigString(effectiveConfig, 'webhook_url');
+    const actionPrefixes = getConfigStringArray(effectiveConfig, 'action_prefixes');
+    const defaultChannel = getConfigString(effectiveConfig, 'default_channel');
+    const format = getConfigString(effectiveConfig, 'format');
+    const includeTargetJson = getConfigBoolean(effectiveConfig, 'include_target_json');
+    const maskSecrets = getConfigBoolean(effectiveConfig, 'mask_secrets');
+    const routes = getConfigSlackRoutes(effectiveConfig, 'routes');
+    const severityRules = getConfigSlackSeverityRules(effectiveConfig, 'severity_rules');
     return {
       enabled: effectiveRow ? effectiveRow.isEnabled : configuredFromEnv,
       configured: effectiveRow ? Boolean(webhookUrl) : configuredFromEnv,
@@ -114,6 +130,43 @@ export function toIntegrationSummary(args: {
       mask_secrets: maskSecrets ?? true,
       routes,
       severity_rules: severityRules,
+    };
+  }
+  if (provider === IntegrationProvider.audit_reasoner) {
+    const providerOrder = normalizeAuditReasonerOrder(effectiveConfig.provider_order);
+    const openAiModel = getConfigString(effectiveConfig, 'openai_model');
+    const claudeModel = getConfigString(effectiveConfig, 'claude_model');
+    const geminiModel = getConfigString(effectiveConfig, 'gemini_model');
+    const openAiBaseUrl = getConfigString(effectiveConfig, 'openai_base_url');
+    const claudeBaseUrl = getConfigString(effectiveConfig, 'claude_base_url');
+    const geminiBaseUrl = getConfigString(effectiveConfig, 'gemini_base_url');
+    const hasOpenAiApiKey =
+      getConfigBoolean(effectiveConfig, 'has_openai_api_key') ??
+      Boolean(getConfigString(effectiveConfig, 'openai_api_key'));
+    const hasClaudeApiKey =
+      getConfigBoolean(effectiveConfig, 'has_claude_api_key') ??
+      Boolean(getConfigString(effectiveConfig, 'claude_api_key'));
+    const hasGeminiApiKey =
+      getConfigBoolean(effectiveConfig, 'has_gemini_api_key') ??
+      Boolean(getConfigString(effectiveConfig, 'gemini_api_key'));
+    const envEnabled = getConfigBoolean(effectiveConfig, 'enabled');
+    const enabled = effectiveRow ? effectiveRow.isEnabled : envEnabled ?? configuredFromEnv;
+    return {
+      enabled,
+      configured: Boolean(enabled && (hasOpenAiApiKey || hasClaudeApiKey || hasGeminiApiKey)),
+      source,
+      locked,
+      provider_order: providerOrder,
+      openai_model: openAiModel,
+      claude_model: claudeModel,
+      gemini_model: geminiModel,
+      openai_base_url: openAiBaseUrl,
+      claude_base_url: claudeBaseUrl,
+      gemini_base_url: geminiBaseUrl,
+      has_openai_api_key: hasOpenAiApiKey,
+      has_claude_api_key: hasClaudeApiKey,
+      has_gemini_api_key: hasGeminiApiKey,
+      has_api_key: hasOpenAiApiKey || hasClaudeApiKey || hasGeminiApiKey,
     };
   }
   const apiUrl = getConfigString(config, 'api_url');
@@ -136,6 +189,30 @@ export function normalizeIntegrationConfig(
   provider: IntegrationProvider,
   patch: Record<string, unknown>
 ): Record<string, unknown> {
+  if (provider === IntegrationProvider.audit_reasoner) {
+    const out: Record<string, unknown> = {};
+    const providerOrder = normalizeAuditReasonerOrder(patch.provider_order);
+    if (providerOrder.length > 0) {
+      out.provider_order = providerOrder;
+    }
+
+    for (const providerName of ['openai', 'claude', 'gemini']) {
+      const model = normalizeOptionalString(patch[`${providerName}_model`]);
+      if (model !== undefined) {
+        out[`${providerName}_model`] = model;
+      }
+      const apiKey = normalizeOptionalString(patch[`${providerName}_api_key`]);
+      if (apiKey !== undefined) {
+        out[`${providerName}_api_key`] = apiKey;
+      }
+      const baseUrl = normalizeOptionalString(patch[`${providerName}_base_url`]);
+      if (baseUrl !== undefined) {
+        out[`${providerName}_base_url`] = baseUrl;
+      }
+    }
+    return out;
+  }
+
   if (provider === IntegrationProvider.slack) {
     const out: Record<string, unknown> = {};
     const webhookUrl = normalizeOptionalString(patch.webhook_url);
@@ -239,6 +316,26 @@ export function getConfigStringArray(config: Record<string, unknown>, key: strin
     .filter((item): item is string => typeof item === 'string')
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function normalizeAuditReasonerOrder(input: unknown): Array<'openai' | 'claude' | 'gemini'> {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+  const out: Array<'openai' | 'claude' | 'gemini'> = [];
+  for (const item of input) {
+    if (typeof item !== 'string') {
+      continue;
+    }
+    const value = item.trim().toLowerCase();
+    if (value !== 'openai' && value !== 'claude' && value !== 'gemini') {
+      continue;
+    }
+    if (!out.includes(value)) {
+      out.push(value);
+    }
+  }
+  return out;
 }
 
 export function getConfigSlackRoutes(config: Record<string, unknown>, key: string): SlackRouteRule[] {

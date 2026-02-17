@@ -29,11 +29,13 @@ export function withAutoReason(action: string, target: Record<string, unknown>):
     return {
       ...target,
       reason: existing,
+      reason_source: 'user',
     };
   }
   return {
     ...target,
     reason: buildAutoReason(action, target),
+    reason_source: 'heuristic',
   };
 }
 
@@ -66,6 +68,14 @@ function buildAutoReason(action: string, target: Record<string, unknown>): strin
     const provider = asString(target.provider) || 'unknown';
     const trigger = asString(target.trigger) || 'unknown';
     return `Automatic reason: ${provider} auto-write triggered by git ${trigger} event.`;
+  }
+  if (action === 'ci.success') {
+    const workflowName = asString(target.workflow_name) || 'unknown workflow';
+    return `Automatic reason: CI workflow "${workflowName}" completed successfully.`;
+  }
+  if (action === 'ci.failure') {
+    const workflowName = asString(target.workflow_name) || 'unknown workflow';
+    return `Automatic reason: CI workflow "${workflowName}" reported a failure.`;
   }
   if (action.endsWith('.search')) {
     const query = asString(target.query);

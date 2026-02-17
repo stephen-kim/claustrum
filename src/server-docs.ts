@@ -1,39 +1,39 @@
 export const MCP_PROMPTS = [
   {
-    name: 'context-sync-usage',
-    description: 'Complete guide on how to use Context Sync effectively as an AI agent',
+    name: 'claustrum-usage',
+    description: 'Complete guide on how to use Claustrum effectively as an AI agent',
   },
   {
-    name: 'debugging-context-sync',
-    description: 'How to debug Context Sync when things go wrong',
+    name: 'debugging-claustrum',
+    description: 'How to debug Claustrum when things go wrong',
   },
 ] as const;
 
 export const MCP_RESOURCES = [
   {
-    uri: 'context-sync://docs/usage-guide',
+    uri: 'claustrum://docs/usage-guide',
     mimeType: 'text/markdown',
-    name: 'Context Sync Usage Guide',
-    description: 'Complete guide on how to use Context Sync effectively as an AI agent',
+    name: 'Claustrum Usage Guide',
+    description: 'Complete guide on how to use Claustrum effectively as an AI agent',
   },
   {
-    uri: 'context-sync://docs/debugging-guide',
+    uri: 'claustrum://docs/debugging-guide',
     mimeType: 'text/markdown',
-    name: 'Debugging Context Sync',
-    description: 'How to debug Context Sync when things go wrong',
+    name: 'Debugging Claustrum',
+    description: 'How to debug Claustrum when things go wrong',
   },
   {
-    uri: 'context-sync://docs/tool-flow',
+    uri: 'claustrum://docs/tool-flow',
     mimeType: 'text/markdown',
     name: 'Tool Flow Patterns',
     description: 'Common tool usage patterns and workflows',
   },
 ] as const;
 
-const USAGE_PROMPT_TEXT = `# Context Sync - AI Agent Usage Guide
+const USAGE_PROMPT_TEXT = `# Claustrum - AI Agent Usage Guide
 
 ## Core Philosophy
-Context Sync is a memory system for project continuity. Use it to keep architecture, constraints, and active work synchronized across sessions.
+Claustrum is a memory system for project continuity. Use it to keep architecture, constraints, and active work synchronized across sessions.
 
 ## Recommended Tool Flow
 1. set_project({ key })
@@ -47,7 +47,7 @@ Context Sync is a memory system for project continuity. Use it to keep architect
 - Skipping recall during handoff ("continue", "good morning")
 `;
 
-const DEBUG_PROMPT_TEXT = `# Debugging Context Sync
+const DEBUG_PROMPT_TEXT = `# Debugging Claustrum
 
 ## Quick Checks
 1. set_project({ key }) succeeds
@@ -84,23 +84,23 @@ const TOOL_FLOW_TEXT = `# Tool Flow Patterns
 `;
 
 export function getPromptText(name: string): string | null {
-  if (name === 'context-sync-usage') {
+  if (name === 'claustrum-usage') {
     return USAGE_PROMPT_TEXT;
   }
-  if (name === 'debugging-context-sync') {
+  if (name === 'debugging-claustrum') {
     return DEBUG_PROMPT_TEXT;
   }
   return null;
 }
 
 export function getResourceText(uri: string): string | null {
-  if (uri === 'context-sync://docs/usage-guide') {
+  if (uri === 'claustrum://docs/usage-guide') {
     return USAGE_PROMPT_TEXT;
   }
-  if (uri === 'context-sync://docs/debugging-guide') {
+  if (uri === 'claustrum://docs/debugging-guide') {
     return DEBUG_PROMPT_TEXT;
   }
-  if (uri === 'context-sync://docs/tool-flow') {
+  if (uri === 'claustrum://docs/tool-flow') {
     return TOOL_FLOW_TEXT;
   }
   return null;

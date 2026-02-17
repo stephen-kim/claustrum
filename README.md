@@ -1,67 +1,156 @@
-# context-sync: Team-Scalable Memory Core
+# Claustrum
 
-[English](README.md) | [한국어](README.ko.md)
+Claustrum is a shared memory layer for AI systems. It integrates context across projects, tools, and teams.
 
-Production-grade memory infrastructure for AI coding agents.
-
-`context-sync` is built for teams running Codex/Claude-style MCP workflows in real projects, not demos.
+Claustrum provides production-oriented memory infrastructure for MCP-driven AI development workflows.
 
 
-## What This Project Does
+## Core Components
 
-If you use Codex across multiple computers, context often gets reset. Decisions, constraints, and active work disappear between sessions, machines, and teammates.
-
-`context-sync` solves that pain by giving agents a shared memory layer backed by Postgres, with project/workspace scoping and auditability for production use.
-
-It is not only cross-device memory sync for one person. It also enables cross-operator context sync for teams, so different developers/agents can work from the same evolving project memory.
-
-For teams, it also connects memory workflows to real systems of record:
-- Notion for documentation context
-- Jira/Confluence for ticket and knowledge context
-- Linear for issue context
-- Slack for audit visibility (who changed what, and why)
-
-It also supports automation around Git commit/merge events:
-- Local git hooks (optional) can forward commit/merge events to memory-core for audit trails.
-- CI merge flows (for example, GitHub Actions on `main`) can write merge summaries to Notion through memory-core.
+- **Memory Core**: REST API, auth, policy, and Postgres-backed storage.
+- **MCP Adapter**: stdio MCP server that calls Memory Core over HTTP (stdout JSON-RPC only).
+- **Admin UI**: web dashboard for workspaces, projects, memories, imports, integrations, and audit logs.
+- **Shared Package**: common schemas, types, and shared utilities.
 
 
-## Why It Hits Different
+## Monorepo Structure
 
-- **MCP-safe by design**: strict stdio discipline (`stdout` JSON-RPC only, logs to `stderr`).
-- **Team-ready model**: workspaces, projects, members, permissions, and audit logs.
-- **Reliable recall behavior**: default recall is **memories-first** (clean, curated context).
-- **Controlled raw access**: optional raw search is snippet-only with hard caps and audit trails.
-- **Operational audit visibility**: audit events can be forwarded to Slack with who/what/why context.
-- **External docs context**: optional Notion/Jira/Confluence/Linear read/search integrations for team knowledge reuse.
-- **Workspace-level integration config**: provider credentials can be managed in Admin UI (`/v1/integrations`), not only env vars.
-- **Team access control in Admin UI**: add users, manage project members, and control roles/permissions by workspace and project scope.
-- **Production deployment path**: Postgres, migrations/seeds, Docker Compose, external DB support.
+```text
+apps/
+  memory-core/
+  mcp-adapter/
+  admin-ui/
+packages/
+  shared/
+infra/
+  docker-compose.yml
+```
 
-
-## Monorepo Apps
-
-- `apps/memory-core`: REST API server (Express + Prisma + Postgres)
-- `apps/mcp-adapter`: MCP stdio adapter that calls memory-core over HTTP
-- `apps/admin-ui`: Next.js admin dashboard
-- `packages/shared`: shared schemas/types
+Infrastructure manifests are mirrored in `infra/docker-compose.yml`.
+Primary runtime compose files remain at repository root (`docker-compose.yml`, `docker-compose.dev.yml`).
 
 
-## Docs / Wiki
+## Architecture
 
-All setup and operations docs are maintained in the project wiki.
+Detailed architecture and data model diagrams:
 
-- Wiki Home: <https://github.com/stephen-kim/context-sync/wiki>
-- Installation: `docs/wiki/Installation.md`
-- Operations: `docs/wiki/Operations.md`
-- Security and MCP I/O: `docs/wiki/Security-and-MCP-IO.md`
-- Notion Integration: `docs/wiki/Notion-Integration.md`
-- Atlassian Integration: `docs/wiki/Atlassian-Integration.md`
-- Linear Integration: `docs/wiki/Linear-Integration.md`
-- Slack Audit Integration: `docs/wiki/Slack-Audit.md`
-- Sync local docs to GitHub Wiki: `pnpm wiki:sync`
+- `docs/architecture.md`
 
 
-## Fork Information
+## Project Resolution and Memory Scope
+
+Default resolution order:
+
+1. `github_remote`
+2. `repo_root_slug`
+3. `manual`
+
+Monorepo subproject keys are **path-based** (not `package.json` name-based):
+
+- repo key: `github:owner/repo`
+- subproject key: `github:owner/repo#apps/memory-core`
+
+Auto-switch defaults:
+
+- `auto_switch_repo=true`
+- `auto_switch_subproject=false`
+- `enable_monorepo_resolution=false`
+- `monorepo_detection_level=2`
+
+Pin mode tools:
+
+- `set_project({ key })`
+- `unset_project_pin()`
+- `get_current_project()`
+
+
+## Git Event Capture
+
+Claustrum can capture git lifecycle events as raw operational signals:
+
+- `post-commit` (default enabled)
+- `post-merge` (default enabled)
+- `post-checkout` (default disabled, optional)
+
+Policy is controlled in **Admin UI > Project Resolution Settings > Git Events**:
+
+- `enable_git_events`
+- `enable_commit_events`
+- `enable_merge_events`
+- `enable_checkout_events`
+- `checkout_debounce_seconds`
+- `checkout_daily_limit`
+
+Safety guarantees:
+
+- No `pre-push` hook support (intentional).
+- Hooks are fire-and-forget (`&`) and always `exit 0`.
+- Hook failures never block git operations.
+- Hook scripts redirect output (`>/dev/null 2>&1`) to avoid stdout/stderr noise during git commands.
+
+APIs:
+
+- `POST /v1/raw-events`
+- `GET /v1/raw-events`
+- `POST /v1/git-events` (legacy-compatible alias mapped to raw events)
+
+
+## Quickstart (localdb)
+
+```bash
+cp .env.example .env
+docker compose --profile localdb up -d
+pnpm db:migrate && pnpm db:seed
+```
+
+
+## Quickstart (external DB)
+
+1. Copy env template:
+
+```bash
+cp .env.example .env
+```
+
+2. Set external DB in `DATABASE_URL` (example RDS):
+
+```bash
+DATABASE_URL=postgres://<user>:<pass>@<rds-endpoint>:5432/<db>?sslmode=require
+```
+
+3. Start services (without localdb profile):
+
+```bash
+docker compose up -d
+```
+
+
+## Docker Networking Notes
+
+- For localdb profile in containers, `DATABASE_URL` host should be `postgres` (service name), not `localhost`.
+- `MEMORY_CORE_URL` is for container-to-container calls (typically `http://memory-core:8080`).
+- `NEXT_PUBLIC_MEMORY_CORE_URL` must be browser-reachable (typically `http://localhost:8080` or a domain URL).
+
+
+## Developer Workflow
+
+```bash
+pnpm install
+pnpm build:workspace
+pnpm test:workspace
+pnpm dev
+```
+
+
+## Docs
+
+- `docs/architecture.md`
+- `docs/wiki/Home.md`
+- `docs/wiki/Installation.md`
+- `docs/wiki/Operations.md`
+- `docs/wiki/Security-and-MCP-IO.md`
+
+
+## Upstream
 
 - Upstream (`upstream`): `https://github.com/Intina47/context-sync.git`

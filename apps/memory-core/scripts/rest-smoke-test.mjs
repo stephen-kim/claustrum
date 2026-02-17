@@ -143,6 +143,103 @@ async function runFlow() {
   assert.ok(githubSecond.matched_mapping_id);
   assert.equal(githubSecond.project.key, 'github:acme/rocket');
 
+  const monoSuffix = `${Date.now()}`;
+  await callApi('/v1/workspace-settings', {
+    method: 'PUT',
+    body: JSON.stringify({
+      workspace_key: workspaceKey,
+      resolution_order: ['github_remote', 'repo_root_slug', 'manual'],
+      auto_create_project: true,
+      auto_create_project_subprojects: true,
+      github_key_prefix: 'github:',
+      local_key_prefix: 'local:',
+      enable_monorepo_resolution: true,
+      monorepo_mode: 'repo_hash_subpath',
+      monorepo_workspace_globs: ['apps/*', 'packages/*'],
+      monorepo_root_markers: ['pnpm-workspace.yaml', 'turbo.json'],
+      monorepo_max_depth: 3,
+    }),
+  });
+
+  const monorepoResolved = await callApi('/v1/resolve-project', {
+    method: 'POST',
+    body: JSON.stringify({
+      workspace_key: workspaceKey,
+      github_remote: {
+        normalized: `acme/mono-${monoSuffix}`,
+      },
+      repo_root: '/repo',
+      cwd: '/repo/apps/memory-core/src',
+      relative_path: 'apps/memory-core/src',
+      monorepo: {
+        enabled: true,
+        candidate_subpaths: ['apps/memory-core'],
+      },
+    }),
+  });
+  assert.equal(monorepoResolved.resolution, 'github_remote');
+  assert.equal(monorepoResolved.project.key, `github:acme/mono-${monoSuffix}#apps/memory-core`);
+
+  await callApi('/v1/workspace-settings', {
+    method: 'PUT',
+    body: JSON.stringify({
+      workspace_key: workspaceKey,
+      resolution_order: ['github_remote', 'repo_root_slug', 'manual'],
+      auto_create_project: true,
+      auto_create_project_subprojects: true,
+      github_key_prefix: 'github:',
+      local_key_prefix: 'local:',
+      enable_monorepo_resolution: true,
+      monorepo_mode: 'repo_colon_subpath',
+      monorepo_workspace_globs: ['services/*'],
+      monorepo_max_depth: 3,
+    }),
+  });
+
+  const customGlobResolved = await callApi('/v1/resolve-project', {
+    method: 'POST',
+    body: JSON.stringify({
+      workspace_key: workspaceKey,
+      github_remote: {
+        normalized: `acme/service-${monoSuffix}`,
+      },
+      relative_path: 'services/gateway/http',
+    }),
+  });
+  assert.equal(customGlobResolved.project.key, `github:acme/service-${monoSuffix}:services/gateway`);
+
+  await callApi('/v1/workspace-settings', {
+    method: 'PUT',
+    body: JSON.stringify({
+      workspace_key: workspaceKey,
+      resolution_order: ['github_remote', 'repo_root_slug', 'manual'],
+      auto_create_project: true,
+      auto_create_project_subprojects: false,
+      github_key_prefix: 'github:',
+      local_key_prefix: 'local:',
+      enable_monorepo_resolution: true,
+      monorepo_mode: 'repo_hash_subpath',
+      monorepo_workspace_globs: ['apps/*'],
+      monorepo_max_depth: 3,
+    }),
+  });
+
+  const subprojectDisabled = await callApi('/v1/resolve-project', {
+    method: 'POST',
+    body: JSON.stringify({
+      workspace_key: workspaceKey,
+      github_remote: {
+        normalized: `acme/no-sub-${monoSuffix}`,
+      },
+      relative_path: 'apps/adapter/src',
+      monorepo: {
+        enabled: true,
+        candidate_subpaths: ['apps/adapter'],
+      },
+    }),
+  });
+  assert.equal(subprojectDisabled.project.key, `github:acme/no-sub-${monoSuffix}`);
+
   const slugFirst = await callApi('/v1/resolve-project', {
     method: 'POST',
     body: JSON.stringify({
@@ -237,6 +334,39 @@ async function runFlow() {
   assert.ok(
     gitAudit.logs.some((log) => log.action === 'git.commit'),
     'Expected git.commit audit entry'
+  );
+
+  await callApi('/v1/ci-events', {
+    method: 'POST',
+    body: JSON.stringify({
+      workspace_key: workspaceKey,
+      project_key: githubSecond.project.key,
+      status: 'failure',
+      provider: 'github_actions',
+      workflow_name: 'CI',
+      workflow_run_id: String(Date.now()),
+      workflow_run_url: `https://github.com/acme/repo/actions/runs/${Date.now()}`,
+      repository: 'acme/repo',
+      branch: 'main',
+      sha: 'abcdef0123456789',
+      event_name: 'push',
+      job_name: 'test',
+      message: 'unit tests failed',
+      metadata: { source: 'rest-smoke-test' },
+    }),
+  });
+
+  const ciAudit = await callApi(
+    `/v1/audit-logs?${new URLSearchParams({
+      workspace_key: workspaceKey,
+      action_prefix: 'ci.',
+      limit: '10',
+    }).toString()}`
+  );
+  assert.ok(Array.isArray(ciAudit.logs), 'Expected ci audit logs');
+  assert.ok(
+    ciAudit.logs.some((log) => log.action === 'ci.failure'),
+    'Expected ci.failure audit entry'
   );
 
   const query = new URLSearchParams({
