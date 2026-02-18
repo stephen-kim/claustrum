@@ -65,16 +65,14 @@ services:
     healthcheck:
       test:
         [
-          "CMD",
-          "node",
-          "-e",
-          "const http=require('http');http.get('http://127.0.0.1:8080/healthz',(res)=>process.exit(res.statusCode===200?0:1)).on('error',()=>process.exit(1));",
+          "CMD-SHELL",
+          "node -e \"const http=require('http');http.get('http://127.0.0.1:' + (process.env.MEMORY_CORE_PORT || '8080') + '/healthz',(res)=>process.exit(res.statusCode===200?0:1)).on('error',()=>process.exit(1));\"",
         ]
       interval: 10s
       timeout: 5s
       retries: 12
     ports:
-      - "${MEMORY_CORE_PORT:-8080}:8080"
+      - "${MEMORY_CORE_PORT:-8080}:${MEMORY_CORE_PORT:-8080}"
 
   mcp-adapter:
     image: ${MCP_ADAPTER_IMAGE:-ghcr.io/stephen-kim/claustrum-mcp-adapter:latest}
