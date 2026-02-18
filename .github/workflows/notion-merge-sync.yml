@@ -7,17 +7,41 @@ on:
 
 jobs:
   sync-notion:
-    if: ${{ secrets.MEMORY_CORE_URL != '' && secrets.MEMORY_CORE_API_KEY != '' && secrets.NOTION_WORKSPACE_KEY != '' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    env:
+      MEMORY_CORE_URL: ${{ secrets.MEMORY_CORE_URL }}
+      MEMORY_CORE_API_KEY: ${{ secrets.MEMORY_CORE_API_KEY }}
+      NOTION_WORKSPACE_KEY: ${{ secrets.NOTION_WORKSPACE_KEY }}
+      NOTION_PAGE_ID: ${{ secrets.NOTION_PAGE_ID }}
+      NOTION_PARENT_PAGE_ID: ${{ secrets.NOTION_PARENT_PAGE_ID }}
     steps:
+      - name: Preflight secrets check
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -n "${MEMORY_CORE_URL:-}" ]] || missing+=("MEMORY_CORE_URL")
+          [[ -n "${MEMORY_CORE_API_KEY:-}" ]] || missing+=("MEMORY_CORE_API_KEY")
+          [[ -n "${NOTION_WORKSPACE_KEY:-}" ]] || missing+=("NOTION_WORKSPACE_KEY")
+
+          if [[ "${#missing[@]}" -gt 0 ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping Notion sync because required secrets are missing: ${missing[*]}"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout
+        if: ${{ steps.preflight.outputs.skip != 'true' }}
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
 
       - name: Build merge summary
+        if: ${{ steps.preflight.outputs.skip != 'true' }}
         shell: bash
         run: |
           SHORT_SHA="${GITHUB_SHA::7}"
@@ -40,13 +64,8 @@ jobs:
           } > .notion_merge_summary.md
 
       - name: Sync to Notion via memory-core
+        if: ${{ steps.preflight.outputs.skip != 'true' }}
         shell: bash
-        env:
-          MEMORY_CORE_URL: ${{ secrets.MEMORY_CORE_URL }}
-          MEMORY_CORE_API_KEY: ${{ secrets.MEMORY_CORE_API_KEY }}
-          NOTION_WORKSPACE_KEY: ${{ secrets.NOTION_WORKSPACE_KEY }}
-          NOTION_PAGE_ID: ${{ secrets.NOTION_PAGE_ID }}
-          NOTION_PARENT_PAGE_ID: ${{ secrets.NOTION_PARENT_PAGE_ID }}
         run: |
           set -euo pipefail
           python - <<'PY'
