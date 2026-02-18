@@ -1,6 +1,7 @@
 ## English
 
 - [[Home]]
+- [[recent-updates]]
 - [[Installation]]
 - [[Environment-Variables]]
 - [[dependency-management]]
@@ -56,6 +57,7 @@
 ## 한국어
 
 - [[Home.ko]]
+- [[recent-updates.ko]]
 - [[Installation.ko]]
 - [[Environment-Variables.ko]]
 - [[dependency-management]]

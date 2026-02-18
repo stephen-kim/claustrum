@@ -18,6 +18,7 @@ Core principles:
 
 ## Read Next
 
+- [Recent Updates](recent-updates)
 - [Installation](Installation)
 - [Environment Variables (Full Reference)](Environment-Variables)
 - [Dependency Management](dependency-management)
@@ -47,6 +48,13 @@ Core principles:
 - [Context Bundle Eval](context-bundle-eval)
 - [Release Notes](Release-Notes)
 - [Installation (Korean)](Installation.ko)
+
+
+## Important Recent Changes
+
+- CI and local tests: `memory-core` unit tests now prebuild `@claustrum/shared` to prevent `ERR_MODULE_NOT_FOUND` on clean runners.
+- PR quality checks: Context Bundle Eval now runs on PRs and updates a sticky comment with score, top failures, and budget warnings.
+- Release safety: release-gate now validates bootstrap/login gating, isolation, RBAC, webhooks, and secret leakage in one flow.
 
 
 ## API Summary

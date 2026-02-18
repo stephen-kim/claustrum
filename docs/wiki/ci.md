@@ -69,8 +69,13 @@ On failure, CI uploads:
 
 - If CI fails before QC starts:
   - check `pnpm install --frozen-lockfile` and lockfile drift
+- If unit tests fail with `ERR_MODULE_NOT_FOUND` for `@claustrum/shared/dist/index.js`:
+  - ensure shared is built before `memory-core` tests:
+    - `pnpm --filter @claustrum/shared build`
+  - current `memory-core` test script already includes this prebuild step by default
 - If CI fails in bootstrap QC:
   - ensure compose profile is `localdb`
+  - ensure `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD` are set to real values (not placeholder strings like `<db_user>`)
   - ensure `MEMORY_CORE_RUN_SEED=false` (release-gate default) is effective
 - If CI fails in webhook QC:
   - confirm `GITHUB_APP_WEBHOOK_SECRET` is present in compose env

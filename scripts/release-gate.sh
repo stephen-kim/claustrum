@@ -15,6 +15,9 @@ export RELEASE_GATE_SKIP_PRECHECKS="${RELEASE_GATE_SKIP_PRECHECKS:-false}"
 
 # Local defaults for non-interactive QC runs.
 export DATABASE_URL="${DATABASE_URL:-postgres://claustrum:claustrum@postgres:5432/claustrum}"
+export POSTGRES_DB="${POSTGRES_DB:-claustrum}"
+export POSTGRES_USER="${POSTGRES_USER:-claustrum}"
+export POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-claustrum}"
 export MEMORY_CORE_API_KEY="${MEMORY_CORE_API_KEY:-release-gate-api-key}"
 export MEMORY_CORE_SEED_ADMIN_KEY="${MEMORY_CORE_SEED_ADMIN_KEY:-release-gate-seed-admin-key}"
 export MEMORY_CORE_RUN_SEED="${MEMORY_CORE_RUN_SEED:-false}"

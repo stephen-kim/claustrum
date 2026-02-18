@@ -18,6 +18,7 @@ Claustrum은 MCP 클라이언트를 위한 팀 확장형 Memory Core 시스템�
 
 ## 다음 문서
 
+- [최근 변경 사항](recent-updates.ko)
 - [설치 가이드](Installation.ko)
 - [환경변수 전체 레퍼런스](Environment-Variables.ko)
 - [의존성 관리 (pnpm)](dependency-management)
@@ -40,6 +41,13 @@ Claustrum은 MCP 클라이언트를 위한 팀 확장형 Memory Core 시스템�
 - [Context Bundle Eval](context-bundle-eval)
 - [릴리즈 노트](Release-Notes.ko)
 - [Installation (English)](Installation)
+
+
+## 최근 중요 변경
+
+- CI/로컬 테스트: clean 환경에서 `ERR_MODULE_NOT_FOUND`가 나지 않도록 `memory-core` 테스트 전에 `@claustrum/shared` 선빌드를 강제했습니다.
+- PR 품질 검증: Context Bundle Eval이 PR마다 실행되며, 점수/실패 Top/토큰 예산 경고를 sticky comment로 갱신합니다.
+- 릴리즈 안정성: release-gate로 bootstrap/login gating, 격리, RBAC, webhook, secret 노출 검증을 한 번에 수행합니다.
 
 
 ## API 요약

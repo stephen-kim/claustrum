@@ -41,6 +41,9 @@ jobs:
           cp .env.example .env
           cat >> .env <<'EOF'
           DATABASE_URL=postgres://claustrum:claustrum@postgres:5432/claustrum
+          POSTGRES_DB=claustrum
+          POSTGRES_USER=claustrum
+          POSTGRES_PASSWORD=claustrum
           MEMORY_CORE_API_KEY=release-gate-api-key
           MEMORY_CORE_SEED_ADMIN_KEY=release-gate-seed-admin-key
           NEXT_PUBLIC_MEMORY_CORE_URL=http://localhost:8080
