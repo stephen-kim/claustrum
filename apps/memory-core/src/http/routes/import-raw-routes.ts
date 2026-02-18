@@ -4,12 +4,29 @@ import { ImportSource } from '@prisma/client';
 import { z } from 'zod';
 import type { MemoryCoreService } from '../../service/index.js';
 import type { AuthedRequest } from '../types.js';
+import { sendHttpError } from '../error-shape.js';
+import { createRateLimitMiddleware } from '../rate-limit.js';
 
 export function registerImportRawRoutes(
   app: express.Express,
   service: MemoryCoreService,
   upload: multer.Multer
 ): void {
+  const rawSearchRateLimit = createRateLimitMiddleware({
+    name: 'raw.search',
+    max: 60,
+    windowMs: 60_000,
+    message: 'Raw search rate limit exceeded. Please retry in a moment.',
+    keyResolver: (req) => (req as AuthedRequest).auth?.user.id || req.ip || 'anonymous',
+  });
+  const rawViewRateLimit = createRateLimitMiddleware({
+    name: 'raw.view',
+    max: 120,
+    windowMs: 60_000,
+    message: 'Raw message view rate limit exceeded. Please retry in a moment.',
+    keyResolver: (req) => (req as AuthedRequest).auth?.user.id || req.ip || 'anonymous',
+  });
+
   app.get('/v1/imports', async (req, res, next) => {
     try {
       const query = z
@@ -39,7 +56,12 @@ export function registerImportRawRoutes(
         })
         .parse(req.body);
       if (!req.file) {
-        return res.status(400).json({ error: 'multipart file is required (field: file)' });
+        return sendHttpError({
+          res,
+          status: 400,
+          code: 'multipart_file_required',
+          message: 'multipart file is required (field: file)',
+        });
       }
 
       const result = await service.createImportUpload({
@@ -116,7 +138,7 @@ export function registerImportRawRoutes(
     }
   });
 
-  app.get('/v1/raw/search', async (req, res, next) => {
+  app.get('/v1/raw/search', rawSearchRateLimit, async (req, res, next) => {
     try {
       const query = z
         .object({
@@ -141,7 +163,7 @@ export function registerImportRawRoutes(
     }
   });
 
-  app.get('/v1/raw/messages/:id', async (req, res, next) => {
+  app.get('/v1/raw/messages/:id', rawViewRateLimit, async (req, res, next) => {
     try {
       const params = z.object({ id: z.string().uuid() }).parse(req.params);
       const query = z

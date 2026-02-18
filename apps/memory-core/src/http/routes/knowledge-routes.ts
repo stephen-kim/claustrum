@@ -2,8 +2,17 @@ import express from 'express';
 import { z } from 'zod';
 import type { MemoryCoreService } from '../../service/index.js';
 import type { AuthedRequest } from '../types.js';
+import { createRateLimitMiddleware } from '../rate-limit.js';
 
 export function registerKnowledgeRoutes(app: express.Express, service: MemoryCoreService): void {
+  const auditExportRateLimit = createRateLimitMiddleware({
+    name: 'audit.export',
+    max: 20,
+    windowMs: 5 * 60_000,
+    message: 'Audit export rate limit exceeded. Please retry later.',
+    keyResolver: (req) => (req as AuthedRequest).auth?.user.id || req.ip || 'anonymous',
+  });
+
   app.get('/v1/notion/search', async (req, res, next) => {
     try {
       const query = z
@@ -257,7 +266,7 @@ export function registerKnowledgeRoutes(app: express.Express, service: MemoryCor
     }
   });
 
-  app.get('/v1/audit/export', async (req, res, next) => {
+  app.get('/v1/audit/export', auditExportRateLimit, async (req, res, next) => {
     try {
       const query = z
         .object({

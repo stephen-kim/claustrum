@@ -2,9 +2,17 @@ import express from 'express';
 import { z } from 'zod';
 import type { MemoryCoreService } from '../../service/index.js';
 import type { AuthedRequest } from '../types.js';
+import { createRateLimitMiddleware } from '../rate-limit.js';
 
 export function registerGithubRoutes(app: express.Express, service: MemoryCoreService): void {
-  app.post('/v1/webhooks/github', async (req, res, next) => {
+  const webhookRateLimit = createRateLimitMiddleware({
+    name: 'github.webhook',
+    max: 1200,
+    windowMs: 60_000,
+    message: 'GitHub webhook rate limit exceeded.',
+  });
+
+  app.post('/v1/webhooks/github', webhookRateLimit, async (req, res, next) => {
     try {
       const headers = z
         .object({

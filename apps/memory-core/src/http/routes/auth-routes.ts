@@ -2,12 +2,20 @@ import express from 'express';
 import { z } from 'zod';
 import type { MemoryCoreService } from '../../service/index.js';
 import type { AuthedRequest } from '../types.js';
+import { createRateLimitMiddleware } from '../rate-limit.js';
 
 export function registerAuthRoutes(
   app: express.Express,
   service: MemoryCoreService,
   authConfig: { sessionSecret: string; sessionTtlSeconds: number }
 ): void {
+  const loginRateLimit = createRateLimitMiddleware({
+    name: 'auth.login',
+    max: 10,
+    windowMs: 60_000,
+    message: 'Too many login attempts. Please try again shortly.',
+  });
+
   app.get('/v1/auth/oidc/:workspace_key/start', async (req, res, next) => {
     try {
       const params = z.object({ workspace_key: z.string().min(1) }).parse(req.params);
@@ -50,7 +58,7 @@ export function registerAuthRoutes(
     }
   });
 
-  app.post('/v1/auth/login', async (req, res, next) => {
+  app.post('/v1/auth/login', loginRateLimit, async (req, res, next) => {
     try {
       const body = z
         .object({

@@ -325,12 +325,24 @@ export async function viewOneTimeApiKeyDomain(
   if (!payload || payload.api_key_id !== row.apiKeyId) {
     throw new AuthorizationError('Invalid one-time token payload');
   }
-  await deps.prisma.apiKeyOneTimeToken.update({
-    where: { id: row.id },
+  const consumedAt = new Date();
+  // Single-use guarantee: claim token with compare-and-set semantics.
+  // This prevents concurrent readers from reusing the same one-time payload.
+  const consumed = await deps.prisma.apiKeyOneTimeToken.updateMany({
+    where: {
+      id: row.id,
+      usedAt: null,
+      expiresAt: {
+        gt: consumedAt,
+      },
+    },
     data: {
-      usedAt: new Date(),
+      usedAt: consumedAt,
     },
   });
+  if (consumed.count === 0) {
+    throw new GoneError('One-time token already used');
+  }
 
   const auditWorkspace = await deps.resolveAuditWorkspaceForUser(row.apiKey.userId);
   if (auditWorkspace) {
@@ -354,4 +366,3 @@ export async function viewOneTimeApiKeyDomain(
     expires_at: row.expiresAt.toISOString(),
   };
 }
-

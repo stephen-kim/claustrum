@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import net from 'node:net';
 import { Prisma, type PrismaClient } from '@prisma/client';
 import type { AuthContext } from '../../auth.js';
 import { assertWorkspaceAdmin } from '../access-control.js';
@@ -121,7 +122,7 @@ export async function createAuditSinkHandler(
   if (!name) {
     throw new ValidationError('name is required.');
   }
-  const endpointUrl = normalizeUrl(args.endpointUrl);
+  const endpointUrl = normalizeAuditSinkUrl(args.endpointUrl);
   const secret = String(args.secret || '').trim();
   if (!secret) {
     throw new ValidationError('secret is required.');
@@ -217,7 +218,9 @@ export async function updateAuditSinkHandler(
     throw new ValidationError('name cannot be empty.');
   }
   const nextEndpoint =
-    args.input.endpoint_url !== undefined ? normalizeUrl(args.input.endpoint_url) : existing.endpointUrl;
+    args.input.endpoint_url !== undefined
+      ? normalizeAuditSinkUrl(args.input.endpoint_url)
+      : existing.endpointUrl;
   const nextSecret =
     args.input.secret !== undefined ? String(args.input.secret || '').trim() : existing.secret;
   if (!nextSecret) {
@@ -714,7 +717,7 @@ function toAuditSinkResponse(row: {
   };
 }
 
-function normalizeUrl(input: string): string {
+export function normalizeAuditSinkUrl(input: string): string {
   const value = String(input || '').trim();
   if (!value) {
     throw new ValidationError('endpoint_url is required.');
@@ -728,7 +731,59 @@ function normalizeUrl(input: string): string {
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw new ValidationError('endpoint_url must use http or https.');
   }
+  if (parsed.username || parsed.password) {
+    throw new ValidationError('endpoint_url must not include username/password.');
+  }
+  if (!allowPrivateAuditSinkUrls() && isPrivateOrLocalHost(parsed.hostname)) {
+    throw new ValidationError(
+      'endpoint_url host points to local/private network. Set MEMORY_CORE_ALLOW_PRIVATE_AUDIT_SINK_URLS=true only for trusted development setups.'
+    );
+  }
   return parsed.toString();
+}
+
+function allowPrivateAuditSinkUrls(): boolean {
+  const value = String(process.env.MEMORY_CORE_ALLOW_PRIVATE_AUDIT_SINK_URLS || '')
+    .trim()
+    .toLowerCase();
+  return value === '1' || value === 'true' || value === 'yes' || value === 'on';
+}
+
+function isPrivateOrLocalHost(hostname: string): boolean {
+  const host = hostname.trim().toLowerCase();
+  if (!host) {
+    return true;
+  }
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) {
+    return true;
+  }
+  if (host === '::1') {
+    return true;
+  }
+  const ipVersion = net.isIP(host);
+  if (ipVersion === 4) {
+    if (host.startsWith('127.')) {
+      return true;
+    }
+    if (host.startsWith('10.')) {
+      return true;
+    }
+    if (host.startsWith('192.168.')) {
+      return true;
+    }
+    if (host.startsWith('169.254.')) {
+      return true;
+    }
+    const secondOctet = Number(host.split('.')[1] || '');
+    if (host.startsWith('172.') && Number.isFinite(secondOctet) && secondOctet >= 16 && secondOctet <= 31) {
+      return true;
+    }
+    return false;
+  }
+  if (ipVersion === 6) {
+    return host.startsWith('fc') || host.startsWith('fd') || host.startsWith('fe80') || host === '::1';
+  }
+  return false;
 }
 
 function normalizeEventFilter(input: Record<string, unknown> | undefined): EventFilter {

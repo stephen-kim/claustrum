@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
@@ -23,6 +24,7 @@ import { AuditReasoner } from './integrations/audit-reasoner.js';
 import { toLockedIntegrationProviders } from './http/locked-integration-providers.js';
 import { registerV1Routes } from './http/routes/register-v1-routes.js';
 import type { AuthedRequest } from './http/types.js';
+import { sendHttpError } from './http/error-shape.js';
 import { bootstrapAdminIfNeeded } from './bootstrap-admin.js';
 
 const config = loadConfig();
@@ -129,6 +131,39 @@ app.use(
   })
 );
 
+app.use((req, res, next) => {
+  const incoming = String(req.header('x-request-id') || '').trim();
+  const requestId = incoming || crypto.randomUUID();
+  (req as AuthedRequest).requestId = requestId;
+  res.setHeader('x-request-id', requestId);
+
+  const startedAt = process.hrtime.bigint();
+  res.on('finish', () => {
+    const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+    const auth = (req as AuthedRequest).auth;
+    const message = [
+      `request_id=${requestId}`,
+      `method=${req.method}`,
+      `path=${req.originalUrl || req.url}`,
+      `status=${res.statusCode}`,
+      `duration_ms=${elapsedMs.toFixed(1)}`,
+      `user_id=${auth?.user.id || 'anonymous'}`,
+      `auth_method=${auth?.authMethod || 'none'}`,
+    ].join(' ');
+
+    if (res.statusCode >= 500) {
+      logger.error(message);
+      return;
+    }
+    if (res.statusCode >= 400) {
+      logger.warn(message);
+      return;
+    }
+    logger.debug(message);
+  });
+  next();
+});
+
 app.get('/healthz', (_req, res) => {
   res.json({ ok: true });
 });
@@ -148,7 +183,12 @@ app.use('/v1', async (req, res, next) => {
     }
     const token = extractBearerToken(req.header('authorization'));
     if (!token) {
-      return res.status(401).json({ error: 'Missing Authorization: Bearer <token>' });
+      return sendHttpError({
+        res,
+        status: 401,
+        code: 'missing_bearer_token',
+        message: 'Missing Authorization: Bearer <token>',
+      });
     }
 
     const auth = await authenticateBearerToken({
@@ -159,14 +199,21 @@ app.use('/v1', async (req, res, next) => {
       apiKeyHashSecret: config.apiKeyHashSecret,
     });
     if (!auth) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return sendHttpError({
+        res,
+        status: 401,
+        code: 'invalid_credentials',
+        message: 'Invalid credentials',
+      });
     }
 
     const setupAllowedPaths = new Set(['/auth/me', '/auth/complete-setup', '/auth/logout']);
     if (auth.mustChangePassword && !setupAllowedPaths.has(path)) {
-      return res.status(403).json({
-        error:
-          'Initial setup is required. Complete POST /v1/auth/complete-setup before using other APIs.',
+      return sendHttpError({
+        res,
+        status: 403,
+        code: 'setup_required',
+        message: 'Initial setup is required. Complete POST /v1/auth/complete-setup before using other APIs.',
       });
     }
 
@@ -184,31 +231,72 @@ registerV1Routes(app, service, upload, {
 
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (error instanceof ValidationError || error instanceof z.ZodError) {
-    const message =
-      error instanceof z.ZodError
-        ? error.issues.map((issue) => issue.message).join(', ')
-        : error.message;
-    return res.status(400).json({ error: message });
+    if (error instanceof z.ZodError) {
+      return sendHttpError({
+        res,
+        status: 400,
+        code: 'validation_error',
+        message: error.issues.map((issue) => issue.message).join(', '),
+        details: {
+          issues: error.issues.map((issue) => ({
+            path: issue.path.join('.'),
+            code: issue.code,
+            message: issue.message,
+          })),
+        },
+      });
+    }
+    return sendHttpError({
+      res,
+      status: 400,
+      code: 'validation_error',
+      message: error.message,
+    });
   }
 
   if (error instanceof AuthenticationError) {
-    return res.status(401).json({ error: error.message });
+    return sendHttpError({
+      res,
+      status: 401,
+      code: 'authentication_error',
+      message: error.message,
+    });
   }
 
   if (error instanceof AuthorizationError) {
-    return res.status(403).json({ error: error.message });
+    return sendHttpError({
+      res,
+      status: 403,
+      code: 'authorization_error',
+      message: error.message,
+    });
   }
 
   if (error instanceof NotFoundError) {
-    return res.status(404).json({ error: error.message });
+    return sendHttpError({
+      res,
+      status: 404,
+      code: 'not_found',
+      message: error.message,
+    });
   }
 
   if (error instanceof GoneError) {
-    return res.status(410).json({ error: error.message });
+    return sendHttpError({
+      res,
+      status: 410,
+      code: 'gone',
+      message: error.message,
+    });
   }
 
   logger.error('Unhandled request error', error);
-  return res.status(500).json({ error: 'Internal server error' });
+  return sendHttpError({
+    res,
+    status: 500,
+    code: 'internal_error',
+    message: 'Internal server error',
+  });
 });
 
 async function startServer() {
