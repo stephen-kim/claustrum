@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GoneError } from '../errors.js';
+import { GoneError, ValidationError } from '../errors.js';
 import { issueOneTimeKeyToken } from '../../security/one-time-key-token.js';
-import { viewOneTimeApiKeyDomain } from './api-key-domain.js';
+import { createSelfApiKeyDomain, viewOneTimeApiKeyDomain } from './api-key-domain.js';
 import type { AuthInviteApiKeyDeps } from './auth-invite-api-key-shared.js';
 
 test('viewOneTimeApiKeyDomain rejects when atomic consume fails', async () => {
@@ -57,5 +57,50 @@ test('viewOneTimeApiKeyDomain rejects when atomic consume fails', async () => {
         token,
       }),
     (error) => error instanceof GoneError && error.message.includes('already used')
+  );
+});
+
+test('createSelfApiKeyDomain requires device_label', async () => {
+  const deps = {
+    prisma: {
+      workspaceMember: {
+        findUnique: async () => ({ id: 'member-1' }),
+      },
+      apiKey: {
+        create: async () => ({ id: 'api-1', label: 'self-generated' }),
+      },
+    },
+    securityConfig: {
+      apiKeyHashSecret: 'unit-secret',
+      oneTimeTokenSecret: 'unit-secret',
+      oneTimeTokenTtlSeconds: 900,
+      publicBaseUrl: undefined,
+      inviteBaseUrl: undefined,
+    },
+    getWorkspaceByKey: async () => ({ id: 'ws-1', key: 'personal' }),
+    normalizeInviteProjectRoles: () => ({}),
+    resolveAuditWorkspaceForUser: async () => ({ id: 'ws-1', key: 'personal' }),
+    canManageUserKeys: async () => true,
+    recordAudit: async () => undefined,
+  } as unknown as AuthInviteApiKeyDeps;
+
+  await assert.rejects(
+    () =>
+      createSelfApiKeyDomain(deps, {
+        auth: {
+          user: {
+            id: 'user-1',
+            source: 'database',
+            email: 'user@example.com',
+            displayName: 'User',
+          },
+          authMethod: 'api_key',
+          projectAccessBypass: false,
+          mustChangePassword: false,
+        },
+        workspaceKey: 'personal',
+        deviceLabel: '',
+      }),
+    (error) => error instanceof ValidationError && /device_label/i.test(error.message)
   );
 });

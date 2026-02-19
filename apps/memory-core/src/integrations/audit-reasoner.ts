@@ -1,5 +1,6 @@
 import type { AuditReasonerProvider } from '../config.js';
 import { Logger } from '../logger.js';
+import type { LlmClient } from './llm-client.js';
 
 export type AuditReasonerProviderConfig = {
   model?: string;
@@ -21,6 +22,10 @@ export type AuditReasonerResult = {
 };
 
 type GenerateArgs = {
+  workspaceId: string;
+  projectId?: string;
+  actorUserId?: string;
+  correlationId?: string;
   action: string;
   actorUserEmail?: string;
   target: Record<string, unknown>;
@@ -28,15 +33,20 @@ type GenerateArgs = {
 
 const MAX_REASON_LENGTH = 240;
 const MAX_PROMPT_TARGET_LENGTH = 3000;
-const REQUEST_TIMEOUT_MS = 10000;
 const DEFAULT_MODELS: Record<AuditReasonerProvider, string> = {
   openai: 'gpt-4.1-mini',
   claude: 'claude-3-5-haiku-latest',
   gemini: 'gemini-2.0-flash',
 };
 
+const SYSTEM_PROMPT =
+  'You write concise engineering audit reasons. Output one sentence only. Avoid secrets and credentials.';
+
 export class AuditReasoner {
-  constructor(private readonly logger: Logger) {}
+  constructor(
+    private readonly logger: Logger,
+    private readonly llmClient: LlmClient
+  ) {}
 
   async generateReason(
     config: AuditReasonerConfig,
@@ -55,29 +65,23 @@ export class AuditReasoner {
       }
       const model = (providerConfig?.model || DEFAULT_MODELS[provider]).trim();
       try {
-        let reason: string | undefined;
-        if (provider === 'openai') {
-          reason = await this.generateWithOpenAI({
-            model,
-            apiKey,
-            baseUrl: providerConfig?.baseUrl,
-            prompt,
-          });
-        } else if (provider === 'claude') {
-          reason = await this.generateWithClaude({
-            model,
-            apiKey,
-            baseUrl: providerConfig?.baseUrl,
-            prompt,
-          });
-        } else {
-          reason = await this.generateWithGemini({
-            model,
-            apiKey,
-            baseUrl: providerConfig?.baseUrl,
-            prompt,
-          });
-        }
+        const completion = await this.llmClient.completeText({
+          workspaceId: args.workspaceId,
+          projectId: args.projectId || null,
+          actorUserId: args.actorUserId || null,
+          systemActor: 'audit_reasoner',
+          purpose: 'summarize',
+          correlationId: args.correlationId || null,
+          provider,
+          model,
+          apiKey,
+          baseUrl: providerConfig?.baseUrl,
+          systemPrompt: SYSTEM_PROMPT,
+          userPrompt: prompt,
+          temperature: 0.1,
+          maxOutputTokens: 120,
+        });
+        const reason = normalizeReasonText(completion.text);
         if (reason) {
           return { reason, provider, model };
         }
@@ -91,139 +95,6 @@ export class AuditReasoner {
       }
     }
     return undefined;
-  }
-
-  private async generateWithOpenAI(args: {
-    model: string;
-    apiKey: string;
-    baseUrl?: string;
-    prompt: string;
-  }): Promise<string | undefined> {
-    const endpoint = `${(args.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '')}/chat/completions`;
-    const response = await fetchWithTimeout(endpoint, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${args.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: args.model,
-        temperature: 0.1,
-        max_tokens: 120,
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You write concise engineering audit reasons. Output one sentence only. Avoid secrets and credentials.',
-          },
-          {
-            role: 'user',
-            content: args.prompt,
-          },
-        ],
-      }),
-    });
-    if (!response.ok) {
-      throw new Error(`OpenAI HTTP ${response.status}`);
-    }
-    const payload = (await response.json()) as {
-      choices?: Array<{ message?: { content?: string | null } }>;
-    };
-    const text = payload.choices?.[0]?.message?.content || '';
-    return normalizeReasonText(text);
-  }
-
-  private async generateWithClaude(args: {
-    model: string;
-    apiKey: string;
-    baseUrl?: string;
-    prompt: string;
-  }): Promise<string | undefined> {
-    const endpoint = `${(args.baseUrl || 'https://api.anthropic.com').replace(/\/+$/, '')}/v1/messages`;
-    const response = await fetchWithTimeout(endpoint, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': args.apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: args.model,
-        max_tokens: 120,
-        temperature: 0.1,
-        system:
-          'You write concise engineering audit reasons. Output one sentence only. Avoid secrets and credentials.',
-        messages: [
-          {
-            role: 'user',
-            content: args.prompt,
-          },
-        ],
-      }),
-    });
-    if (!response.ok) {
-      throw new Error(`Claude HTTP ${response.status}`);
-    }
-    const payload = (await response.json()) as {
-      content?: Array<{ type?: string; text?: string }>;
-    };
-    const text =
-      payload.content
-        ?.filter((part) => part.type === 'text')
-        .map((part) => part.text || '')
-        .join('\n') || '';
-    return normalizeReasonText(text);
-  }
-
-  private async generateWithGemini(args: {
-    model: string;
-    apiKey: string;
-    baseUrl?: string;
-    prompt: string;
-  }): Promise<string | undefined> {
-    const endpointBase = (args.baseUrl || 'https://generativelanguage.googleapis.com/v1beta').replace(
-      /\/+$/,
-      ''
-    );
-    const endpoint = `${endpointBase}/models/${encodeURIComponent(
-      args.model
-    )}:generateContent?key=${encodeURIComponent(args.apiKey)}`;
-    const response = await fetchWithTimeout(endpoint, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts: [{ text: args.prompt }] }],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 120,
-        },
-      }),
-    });
-    if (!response.ok) {
-      throw new Error(`Gemini HTTP ${response.status}`);
-    }
-    const payload = (await response.json()) as {
-      candidates?: Array<{
-        content?: { parts?: Array<{ text?: string }> };
-      }>;
-    };
-    const text = payload.candidates?.[0]?.content?.parts?.map((part) => part.text || '').join('\n') || '';
-    return normalizeReasonText(text);
-  }
-}
-
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    return await fetch(url, {
-      ...init,
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timeout);
   }
 }
 

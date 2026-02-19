@@ -14,16 +14,18 @@ import { resolveProjectKeyByContextMode, type MonorepoContextMode } from './mono
 import { runCaptureCommand, runInstallHooksCommand } from './capture-mode.js';
 import { tools } from './tools.js';
 import { handleToolCall } from './tool-call-handler.js';
+import { loadConfig } from './config.js';
 import type {
   ProjectSummary,
   ResolveResponse,
   WorkspaceSettingsResponse,
 } from './types.js';
 
-const MEMORY_CORE_URL = (process.env.MEMORY_CORE_URL || '').trim().replace(/\/+$/, '');
-const MEMORY_CORE_API_KEY = (process.env.MEMORY_CORE_API_KEY || '').trim();
-const DEFAULT_WORKSPACE_KEY = process.env.MEMORY_CORE_WORKSPACE_KEY || 'personal';
-const logger = new Logger(parseLogLevel(process.env.MCP_ADAPTER_LOG_LEVEL));
+const config = loadConfig();
+const MEMORY_CORE_URL = config.memoryCoreUrl;
+const MEMORY_CORE_API_KEY = config.memoryCoreApiKey;
+const DEFAULT_WORKSPACE_KEY = config.defaultWorkspaceKey;
+const logger = new Logger(parseLogLevel(config.logLevel));
 const installedHookRepos = new Set<string>();
 const MANAGED_HOOK_MARKER = '# claustrum-managed hook';
 const CLI_SCRIPT_PATH = path.resolve(process.argv[1] || '');

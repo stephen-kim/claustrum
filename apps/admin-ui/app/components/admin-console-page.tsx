@@ -196,6 +196,7 @@ export function AdminConsolePage(props: { logout: () => Promise<void> }) {
       memoryActions.loadRawEvents(),
       memoryActions.loadAuditLogs(workspaceState.selectedWorkspace),
       memoryActions.loadAccessTimeline(workspaceState.selectedWorkspace),
+      memoryActions.loadLlmUsage(workspaceState.selectedWorkspace),
       globalRulesActions.loadGlobalRules(globalRulesState.scope, globalRulesState.targetUserId),
       integrationsActions.loadIntegrations(workspaceState.selectedWorkspace),
       integrationsActions.loadGithubInstallation(workspaceState.selectedWorkspace),
@@ -210,6 +211,10 @@ export function AdminConsolePage(props: { logout: () => Promise<void> }) {
       integrationsActions.loadDetectionRules(workspaceState.selectedWorkspace),
       integrationsActions.loadDetections(workspaceState.selectedWorkspace),
       integrationsActions.loadOutboundPolicy(
+        workspaceState.selectedWorkspace,
+        integrationsState.selectedOutboundIntegration
+      ),
+      integrationsActions.loadOutboundTemplateVariables(
         workspaceState.selectedWorkspace,
         integrationsState.selectedOutboundIntegration
       ),

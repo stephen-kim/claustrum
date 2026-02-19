@@ -39,6 +39,26 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Generate OpenAPI spec from memory-core routes
+        run: node scripts/generate-openapi.mjs
+
+      - name: Validate generated OpenAPI spec
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const specPath = 'apps/docs-site/public/openapi.json';
+          const raw = fs.readFileSync(specPath, 'utf8');
+          const spec = JSON.parse(raw);
+          if (!spec?.paths || Object.keys(spec.paths).length === 0) {
+            throw new Error('OpenAPI validation failed: no paths generated');
+          }
+          const stats = spec['x-generated-stats'] || {};
+          if (typeof stats.endpointCount !== 'number' || stats.endpointCount < 1) {
+            throw new Error('OpenAPI validation failed: endpointCount missing/invalid');
+          }
+          console.log(`[openapi] valid (${stats.endpointCount} endpoints)`);
+          NODE
+
       - name: Set docs base path
         run: echo "NEXT_PUBLIC_BASE_PATH=/${GITHUB_REPOSITORY#*/}" >> "$GITHUB_ENV"
 

@@ -113,6 +113,8 @@ export function registerCorePrimaryAccessRoutes(app: express.Express, service: M
         .object({
           user_id: z.string().min(1),
           label: z.string().min(1).max(100).optional(),
+          device_label: z.string().min(1).max(120),
+          expires_at: z.string().datetime().optional(),
         })
         .parse(req.body);
       const result = await service.issueWorkspaceApiKey({
@@ -120,6 +122,8 @@ export function registerCorePrimaryAccessRoutes(app: express.Express, service: M
         workspaceKey: params.key,
         userId: body.user_id,
         label: body.label,
+        deviceLabel: body.device_label,
+        expiresAt: body.expires_at,
       });
       res.status(201).json(result);
     } catch (error) {

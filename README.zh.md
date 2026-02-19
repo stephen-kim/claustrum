@@ -37,11 +37,6 @@ Claustrum 将这些分散信息变成团队可共享、可检索的记忆系统�
 本 README 仅保留概要。详细安装、配置与运维文档发布在 GitHub Pages，源文件位于 `docs/content`。
 
 - [Docs Site (GitHub Pages)](https://stephen-kim.github.io/claustrum/)
-- [Docs Source Home (EN)](docs/content/Home.md)
-- [Installation (EN)](docs/content/Installation.md)
-- [Operations (EN)](docs/content/Operations.md)
-- [Security and MCP I/O (EN)](docs/content/Security-and-MCP-IO.md)
-- [Architecture](docs/architecture.md)
 
 
 ## 仓库结构

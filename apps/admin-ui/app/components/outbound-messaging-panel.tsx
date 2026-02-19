@@ -1,6 +1,11 @@
 'use client';
 
-import type { OutboundIntegrationType, OutboundLocale, OutboundMode, OutboundStyle } from '../lib/types';
+import type {
+  OutboundIntegrationType,
+  OutboundLocale,
+  OutboundStyle,
+  OutboundTemplateVariablesResponse,
+} from '../lib/types';
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Checkbox, Input, Label, Select, Textarea } from './ui';
 
 const LOCALES: OutboundLocale[] = ['en', 'ko', 'ja', 'es', 'zh'];
@@ -25,8 +30,6 @@ type Props = {
   setSelectedIntegration: (value: OutboundIntegrationType) => void;
   policyEnabled: boolean;
   setPolicyEnabled: (value: boolean) => void;
-  policyMode: OutboundMode;
-  setPolicyMode: (value: OutboundMode) => void;
   policyStyle: OutboundStyle;
   setPolicyStyle: (value: OutboundStyle) => void;
   policyLocaleDefault: OutboundLocale;
@@ -35,10 +38,7 @@ type Props = {
   setPolicySupportedLocales: (value: OutboundLocale[]) => void;
   templateOverridesJson: string;
   setTemplateOverridesJson: (value: string) => void;
-  llmPromptSystem: string;
-  setLlmPromptSystem: (value: string) => void;
-  llmPromptUser: string;
-  setLlmPromptUser: (value: string) => void;
+  templateVariables: OutboundTemplateVariablesResponse | null;
   outboundPolicyReason: string;
   setOutboundPolicyReason: (value: string) => void;
   saveOutboundPolicy: () => Promise<void>;
@@ -60,6 +60,9 @@ export function OutboundMessagingPanel(props: Props) {
     <Card>
       <CardHeader>
         <CardTitle>Outbound Messaging</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          All policy changes are persisted to audit logs and visible in the Access Timeline/Audit panels.
+        </p>
       </CardHeader>
       <CardContent>
         <div className="row">
@@ -147,14 +150,11 @@ export function OutboundMessagingPanel(props: Props) {
 
           <div className="row mt-3">
             <div className="stack gap-1">
-              <Label className="muted">Mode</Label>
-              <Select
-                value={props.policyMode}
-                onChange={(event) => props.setPolicyMode(event.target.value as OutboundMode)}
-              >
-                <option value="template">template</option>
-                <option value="llm">llm</option>
-              </Select>
+              <Label className="muted">Template Engine</Label>
+              <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-sm">
+                <span className="font-medium">Liquid</span>
+                <span className="ml-2 text-muted-foreground">(fixed)</span>
+              </div>
             </div>
             <div className="stack gap-1">
               <Label className="muted">Style</Label>
@@ -207,27 +207,55 @@ export function OutboundMessagingPanel(props: Props) {
               rows={6}
               value={props.templateOverridesJson}
               onChange={(event) => props.setTemplateOverridesJson(event.target.value)}
-              placeholder='{"raw.search":{"en":"Searched for {q}","ko":"{q} 검색 완료"}}'
+              placeholder='{"raw.search":{"en":"Searched for {{ q }} ({{ count }})","ko":"{{ q }} 검색 완료 ({{ count }})"}}'
             />
           </div>
 
-          <div className="stack gap-1 mt-3">
-            <Label className="muted">LLM Prompt: System</Label>
-            <Textarea
-              rows={3}
-              value={props.llmPromptSystem}
-              onChange={(event) => props.setLlmPromptSystem(event.target.value)}
-              placeholder="Optional. Used only when mode=llm."
-            />
-          </div>
-          <div className="stack gap-1 mt-3">
-            <Label className="muted">LLM Prompt: User</Label>
-            <Textarea
-              rows={3}
-              value={props.llmPromptUser}
-              onChange={(event) => props.setLlmPromptUser(event.target.value)}
-              placeholder="Optional. Used only when mode=llm."
-            />
+          <div className="mt-3 rounded-md border border-border bg-muted/20 p-3">
+            <Label className="muted">Available Template Variables</Label>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Use Liquid syntax like <code>{'{{ q }}'}</code>. Variables come from audit/event params.
+            </p>
+            {props.templateVariables ? (
+              <>
+                <div className="mt-3">
+                  <div className="text-xs font-medium text-muted-foreground">Common</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {props.templateVariables.common_variables.map((item) => (
+                      <Badge key={item.name} variant="secondary" className="font-mono text-xs">
+                        {item.name}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+                <div className="mt-3 max-h-56 overflow-auto rounded-md border border-border">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-muted/40">
+                      <tr>
+                        <th className="px-2 py-1">Action</th>
+                        <th className="px-2 py-1">Variables</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {props.templateVariables.action_variables.map((row) => (
+                        <tr key={row.action_key} className="border-t border-border">
+                          <td className="px-2 py-1 font-mono">{row.action_key}</td>
+                          <td className="px-2 py-1">
+                            {row.variables.length > 0
+                              ? row.variables.map((item) => item.name).join(', ')
+                              : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Variable catalog will load after selecting a workspace and integration.
+              </p>
+            )}
           </div>
 
           <div className="stack gap-1 mt-3">

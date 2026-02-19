@@ -10,6 +10,8 @@ import type {
   DecisionKeywordPolicy,
   ImportItem,
   ImportSource,
+  LlmUsageGroupBy,
+  LlmUsageItem,
   MemoryItem,
   ProjectRole,
   RawEventItem,
@@ -147,6 +149,21 @@ export function useAdminMemorySearchState() {
   const [accessTimelineHasMore, setAccessTimelineHasMore] = useState(false);
   const [accessTimelineLoading, setAccessTimelineLoading] = useState(false);
   const [accessTimelineExportFormat, setAccessTimelineExportFormat] = useState<'csv' | 'json'>('csv');
+  const [llmUsageGroupBy, setLlmUsageGroupBy] = useState<LlmUsageGroupBy>('day');
+  const [llmUsageFrom, setLlmUsageFrom] = useState('');
+  const [llmUsageTo, setLlmUsageTo] = useState('');
+  const [llmUsageItems, setLlmUsageItems] = useState<LlmUsageItem[]>([]);
+  const [llmUsageTotals, setLlmUsageTotals] = useState<{
+    event_count: number;
+    input_tokens: number;
+    output_tokens: number;
+    estimated_cost_cents: number;
+  }>({
+    event_count: 0,
+    input_tokens: 0,
+    output_tokens: 0,
+    estimated_cost_cents: 0,
+  });
 
   function resetWorkspaceScopedState() {
     setMemories([]);
@@ -228,6 +245,16 @@ export function useAdminMemorySearchState() {
     setAccessTimelineHasMore(false);
     setAccessTimelineLoading(false);
     setAccessTimelineExportFormat('csv');
+    setLlmUsageGroupBy('day');
+    setLlmUsageFrom('');
+    setLlmUsageTo('');
+    setLlmUsageItems([]);
+    setLlmUsageTotals({
+      event_count: 0,
+      input_tokens: 0,
+      output_tokens: 0,
+      estimated_cost_cents: 0,
+    });
   }
 
   return {
@@ -441,6 +468,16 @@ export function useAdminMemorySearchState() {
     setAccessTimelineLoading,
     accessTimelineExportFormat,
     setAccessTimelineExportFormat,
+    llmUsageGroupBy,
+    setLlmUsageGroupBy,
+    llmUsageFrom,
+    setLlmUsageFrom,
+    llmUsageTo,
+    setLlmUsageTo,
+    llmUsageItems,
+    setLlmUsageItems,
+    llmUsageTotals,
+    setLlmUsageTotals,
     resetWorkspaceScopedState,
   };
 }

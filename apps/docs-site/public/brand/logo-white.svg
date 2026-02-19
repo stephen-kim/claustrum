@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="_레이어_1" data-name="레이어_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="0 0 1024 1024">
+  <!-- Generator: Adobe Illustrator 30.2.0, SVG Export Plug-In . SVG Version: 2.1.1 Build 105)  -->
+  <defs>
+    <style>
+      .st0 {
+        fill: url(#_무제_그라디언트_16);
+        opacity: .5;
+      }
+
+      .st0, .st1, .st2, .st3, .st4 {
+        isolation: isolate;
+      }
+
+      .st1 {
+        fill: url(#_무제_그라디언트_61);
+      }
+
+      .st1, .st2, .st3 {
+        opacity: .41;
+      }
+
+      .st2 {
+        fill: url(#_무제_그라디언트_82);
+      }
+
+      .st3 {
+        fill: url(#_무제_그라디언트_40);
+      }
+
+      .st5, .st4 {
+        fill: #fff;
+      }
+
+      .st4 {
+        opacity: .31;
+      }
+    </style>
+    <radialGradient id="_무제_그라디언트_16" data-name="무제 그라디언트 16" cx="504.41" cy="512.87" fx="504.41" fy="512.87" r="260.46" gradientTransform="translate(0 1026) scale(1 -1)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity=".5"/>
+      <stop offset=".99" stop-color="#fff"/>
+    </radialGradient>
+    <radialGradient id="_무제_그라디언트_61" data-name="무제 그라디언트 61" cx="506.83" cy="537.41" fx="506.83" fy="537.41" r="256.87" gradientTransform="translate(0 1026) scale(1 -1)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset=".99" stop-color="#fff"/>
+    </radialGradient>
+    <radialGradient id="_무제_그라디언트_82" data-name="무제 그라디언트 82" cx="506.83" cy="537.41" fx="506.83" fy="537.41" r="256.87" gradientTransform="translate(0 1026) scale(1 -1)" gradientUnits="userSpaceOnUse">
+      <stop offset=".04" stop-color="#fff" stop-opacity="0"/>
+      <stop offset=".99" stop-color="#fff"/>
+    </radialGradient>
+    <radialGradient id="_무제_그라디언트_40" data-name="무제 그라디언트 40" cx="506.83" cy="537.25" fx="506.83" fy="537.25" r="244.37" gradientTransform="translate(0 1026) scale(1 -1)" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#fff"/>
+    </radialGradient>
+  </defs>
+  <g id="_레이어_10">
+    <polygon class="st0" points="323.52 384.72 309.21 393.02 309.21 411.14 496.07 520.49 496.07 737.77 512.32 747.19 525.83 739.23 525.83 522.63 711.94 412.47 711.94 393.68 697.12 384.85 512.85 495.57 323.52 384.72"/>
+  </g>
+  <g id="_레이어_2_사본_3">
+    <g id="_레이어_8">
+      <path class="st4" d="M512.85,241.56l-232.22,134.55v269.57l232.22,136.75,230.53-134.92v-268.89l-230.53-137.06ZM711.94,629.75l-199.52,117.38-203.21-116.39v-237.72l203.55-117.98,199.18,118.64v236.07h0Z"/>
+    </g>
+  </g>
+  <g id="_레이어_2_사본_2">
+    <polygon class="st1" points="482.74 574.06 482.74 527.53 445.43 504.48 445.43 533.65 404.77 557.27 404.77 481.01 374.18 462.57 374.4 574.91 309.21 612.78 309.21 630.74 323.47 638.91 390.2 600.15 482.74 655.38 482.74 619.75 419.61 583.06 459.87 559.68 482.74 574.06"/>
+    <polygon class="st2" points="648.9 575.37 648.72 462.57 616.87 481.43 616.87 556.49 576.21 532.53 576.21 504.48 538.07 527.95 538.07 574.06 562.75 559.14 601.86 582.2 538.07 621.01 538.07 655.38 631.81 599.85 697.36 638.48 711.94 629.75 711.94 612.53 648.9 575.37"/>
+    <polygon class="st3" points="601.28 442.44 632.69 423.57 525.83 358.46 525.83 282.83 512.76 275.04 496.07 284.71 496.07 360.1 390.11 423.71 420.67 441.6 496.07 396.77 496.07 443.02 471 457.54 510.95 480.59 550.64 457.54 525.83 441.52 525.83 396.7 601.28 442.44"/>
+  </g>
+  <g id="_레이어_5_사본">
+    <path class="st5" d="M513.65,856.12l-298.36-171.89,1.64-348.25,296.02-168.42,292.62,179.95,116.47-71.4L514.03,33.52,102.8,271.79v476.69l410.96,242,407.93-238.74-115.25-67.6-292.78,171.98h-.01ZM846.52,751.7l-332.7,194.71-373.02-219.66v-433.07l372.98-216.1,333.08,198.04-40.43,27.51-292.49-179.86-334.92,190.55-1.85,392.31,336.65,193.95,292.61-171.88,40.07,23.5h.02Z"/>
+  </g>
+  <g id="_레이어_9">
+    <polygon class="st5" points="806.44 303.14 846.86 275.62 513.78 77.58 513.94 123.27 806.44 303.14"/>
+    <polygon class="st5" points="140.8 293.69 179.03 313.82 513.94 123.27 513.78 77.58 140.8 293.69"/>
+    <polygon class="st5" points="140.8 726.75 177.18 706.14 179.03 313.82 140.8 293.69 140.8 726.75"/>
+    <polygon class="st5" points="513.84 900.08 513.82 946.41 140.8 726.75 177.18 706.14 513.84 900.08"/>
+    <polygon class="st5" points="806.45 728.21 846.52 751.7 513.82 946.41 513.84 900.08 806.45 728.21"/>
+  </g>
+</svg>

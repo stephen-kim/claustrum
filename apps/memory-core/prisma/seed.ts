@@ -1,6 +1,6 @@
 import { PrismaClient, ProjectRole, WorkspaceRole } from '@prisma/client';
 import * as crypto from 'crypto';
-import { hashApiKey } from '../src/security/api-key.js';
+import { buildApiKeyPrefix, hashApiKey } from '../src/security/api-key.js';
 
 const prisma = new PrismaClient();
 
@@ -16,6 +16,31 @@ const ADMIN_KEY =
   'dev-admin-key-change-me';
 const API_KEY_HASH_SECRET =
   process.env.MEMORY_CORE_API_KEY_HASH_SECRET || 'claustrum-dev-api-key-hash-secret-change-me';
+const DEFAULT_LLM_PRICING: Array<{
+  provider: string;
+  model: string;
+  inputTokenPricePer1kCents: number;
+  outputTokenPricePer1kCents: number;
+}> = [
+  {
+    provider: 'openai',
+    model: 'gpt-4.1-mini',
+    inputTokenPricePer1kCents: 0.04,
+    outputTokenPricePer1kCents: 0.16,
+  },
+  {
+    provider: 'claude',
+    model: 'claude-3-5-haiku-latest',
+    inputTokenPricePer1kCents: 0.08,
+    outputTokenPricePer1kCents: 0.4,
+  },
+  {
+    provider: 'gemini',
+    model: 'gemini-2.0-flash',
+    inputTokenPricePer1kCents: 0.01,
+    outputTokenPricePer1kCents: 0.03,
+  },
+];
 
 async function main(): Promise<void> {
   const workspace = await prisma.workspace.upsert({
@@ -91,8 +116,12 @@ async function main(): Promise<void> {
   await prisma.apiKey.upsert({
     where: { keyHash: adminKeyHash },
     update: {
+      workspaceId: workspace.id,
       userId: adminUser.id,
       label: 'seed-admin',
+      keyPrefix: buildApiKeyPrefix(ADMIN_KEY),
+      deviceLabel: 'seed-admin-device',
+      expiresAt: null,
       revokedAt: null,
       keyHash: adminKeyHash,
       key: null,
@@ -100,7 +129,10 @@ async function main(): Promise<void> {
     },
     create: {
       key: null,
+      workspaceId: workspace.id,
       keyHash: adminKeyHash,
+      keyPrefix: buildApiKeyPrefix(ADMIN_KEY),
+      deviceLabel: 'seed-admin-device',
       label: 'seed-admin',
       userId: adminUser.id,
       createdByUserId: adminUser.id,
@@ -114,6 +146,28 @@ async function main(): Promise<void> {
       workspaceId: workspace.id,
     },
   });
+
+  for (const price of DEFAULT_LLM_PRICING) {
+    await prisma.llmPricing.upsert({
+      where: {
+        provider_model: {
+          provider: price.provider,
+          model: price.model,
+        },
+      },
+      update: {
+        isActive: true,
+        inputTokenPricePer1kCents: price.inputTokenPricePer1kCents,
+        outputTokenPricePer1kCents: price.outputTokenPricePer1kCents,
+      },
+      create: {
+        provider: price.provider,
+        model: price.model,
+        inputTokenPricePer1kCents: price.inputTokenPricePer1kCents,
+        outputTokenPricePer1kCents: price.outputTokenPricePer1kCents,
+      },
+    });
+  }
 
   await upsertDetectionRuleByName({
     workspaceId: workspace.id,
@@ -163,7 +217,9 @@ async function main(): Promise<void> {
     },
   });
 
-  console.error('[memory-core:seed] seeded workspace, settings, admin user, default project, and admin API key');
+  console.error(
+    '[memory-core:seed] seeded workspace, settings, default LLM pricing, admin user, default project, and admin API key'
+  );
   console.error(`[memory-core:seed] admin email: ${ADMIN_EMAIL}`);
   console.error(`[memory-core:seed] admin api key: ${maskKey(ADMIN_KEY)}`);
 }

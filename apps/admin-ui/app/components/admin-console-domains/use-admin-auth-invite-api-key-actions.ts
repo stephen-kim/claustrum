@@ -12,6 +12,15 @@ type AuthInviteApiKeyDeps = {
   setError: (message: string | null) => void;
 };
 
+function resolveDeviceLabel(prefix: string): string {
+  if (typeof window === 'undefined') {
+    return `${prefix}-unknown`;
+  }
+  const platform = (navigator.platform || 'browser').replace(/\s+/g, '-');
+  const host = (window.location.hostname || 'localhost').replace(/\s+/g, '-');
+  return `${prefix}-${platform}-${host}`.slice(0, 120);
+}
+
 export function useAdminAuthInviteApiKeyActions(deps: AuthInviteApiKeyDeps) {
   const {
     callApi,
@@ -190,6 +199,7 @@ export function useAdminAuthInviteApiKeyActions(deps: AuthInviteApiKeyDeps) {
       method: 'POST',
       body: JSON.stringify({
         label: selfApiKeyLabel.trim() || undefined,
+        device_label: resolveDeviceLabel('admin-ui'),
       }),
     });
     setSelfApiKeyLabel('');
@@ -225,6 +235,9 @@ export function useAdminAuthInviteApiKeyActions(deps: AuthInviteApiKeyDeps) {
       `/v1/users/${encodeURIComponent(selectedApiKeyUserId)}/api-keys/reset`,
       {
         method: 'POST',
+        body: JSON.stringify({
+          device_label: resolveDeviceLabel(`reset-${selectedApiKeyUserId.slice(0, 8)}`),
+        }),
       }
     );
     setLatestOneTimeUrl(result.one_time_url);

@@ -7,15 +7,13 @@ const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
 
 async function main() {
-  if (!process.env.DATABASE_URL && !process.env.CONTEXT_SYNC_DB_HOST) {
-    throw new Error(
-      'DATABASE_URL (or CONTEXT_SYNC_DB_* vars) is required for smoke tests.'
-    );
+  if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL is required for smoke tests.');
   }
 
   const root = path.resolve(__dirname, '..');
-  const distEntry = path.join(root, 'dist', 'index.js');
-  const srcEntry = path.join(root, 'src', 'index.ts');
+  const distEntry = path.join(root, 'apps', 'mcp-adapter', 'dist', 'index.js');
+  const srcEntry = path.join(root, 'apps', 'mcp-adapter', 'src', 'index.ts');
 
   const command = process.execPath;
   const args = fs.existsSync(distEntry)

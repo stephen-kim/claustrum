@@ -20,6 +20,15 @@ import {
 } from './github/github-api-client.js';
 import { ensureProjectMapping } from './project-mapping-helpers.js';
 import { getEffectiveWorkspaceSettings } from '../workspace-resolution.js';
+import {
+  normalizeGithubRepoFullName,
+  normalizeInstallationPayload,
+  normalizeProjectKeyPrefix,
+  parseGithubBigInt,
+  requireGithubAppConfig,
+  resolveInstallBaseUrl,
+  toStringMap,
+} from './github-integration-utils.js';
 
 type DbLike = PrismaClient;
 
@@ -470,27 +479,6 @@ export async function listGithubReposHandler(
   };
 }
 
-function normalizeProjectKeyPrefix(prefix: string): string {
-  const value = String(prefix || '').trim();
-  return value || 'github:';
-}
-
-function normalizeGithubRepoFullName(fullName: string): string | null {
-  const normalized = String(fullName || '')
-    .trim()
-    .replace(/^\/+/, '')
-    .replace(/\/+$/, '')
-    .replace(/\s+/g, '');
-  if (!normalized || !normalized.includes('/')) {
-    return null;
-  }
-  const [owner, repo] = normalized.split('/', 2);
-  if (!owner || !repo) {
-    return null;
-  }
-  return `${owner.toLowerCase()}/${repo.toLowerCase()}`;
-}
-
 async function callIssueGithubAppJwt(
   deps: GithubIntegrationDeps,
   appId: string,
@@ -532,73 +520,4 @@ async function callListInstallationRepositories(
     return deps.githubApiClient.listInstallationRepositories(token);
   }
   return listInstallationRepositories(token);
-}
-
-function parseGithubBigInt(value: string, fieldName: string): bigint {
-  const normalized = value.trim();
-  if (!/^\d+$/.test(normalized)) {
-    throw new ValidationError(`${fieldName} must be a numeric string.`);
-  }
-  return BigInt(normalized);
-}
-
-function resolveInstallBaseUrl(config: GithubIntegrationDeps['securityConfig']): string {
-  const explicitUrl = (config.githubAppUrl || '').trim();
-  if (explicitUrl) {
-    return `${explicitUrl.replace(/\/+$/, '')}/installations/new`;
-  }
-  const appName = (config.githubAppName || '').trim();
-  if (appName) {
-    return `https://github.com/apps/${encodeURIComponent(appName)}/installations/new`;
-  }
-  throw new ValidationError('GitHub App is not configured. Set GITHUB_APP_NAME or GITHUB_APP_URL.');
-}
-
-function requireGithubAppConfig(config: GithubIntegrationDeps['securityConfig']): {
-  appId: string;
-  privateKey: string;
-} {
-  const appId = (config.githubAppId || '').trim();
-  const privateKey = (config.githubAppPrivateKey || '').trim();
-  if (!appId || !privateKey) {
-    throw new ValidationError('GitHub App credentials are missing. Set GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY.');
-  }
-  return { appId, privateKey };
-}
-
-function normalizeInstallationPayload(payload: GithubAppInstallationResponse): {
-  accountType: GithubAccountType;
-  accountLogin: string;
-  repositorySelection: GithubRepositorySelection;
-  permissions: Record<string, string>;
-} {
-  const accountType = payload.account?.type === 'Organization' ? 'Organization' : 'User';
-  const accountLogin = (payload.account?.login || '').trim();
-  if (!accountLogin) {
-    throw new ValidationError('GitHub installation payload is missing account login.');
-  }
-
-  const selectionRaw = (payload.repository_selection || '').trim().toLowerCase();
-  const repositorySelection: GithubRepositorySelection =
-    selectionRaw === 'all' ? 'all' : selectionRaw === 'selected' ? 'selected' : 'unknown';
-
-  return {
-    accountType,
-    accountLogin,
-    repositorySelection,
-    permissions: toStringMap(payload.permissions),
-  };
-}
-
-function toStringMap(value: unknown): Record<string, string> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {};
-  }
-  const out: Record<string, string> = {};
-  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof item === 'string') {
-      out[key] = item;
-    }
-  }
-  return out;
 }

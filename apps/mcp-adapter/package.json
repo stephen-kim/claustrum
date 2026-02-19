@@ -1,6 +1,6 @@
 {
   "name": "@claustrum/mcp-adapter",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
@@ -9,12 +9,18 @@
     "build": "tsc -p tsconfig.json",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js",
-    "test": "node --import tsx --test src/git-context.test.ts src/context-policy.test.ts src/monorepo-detection.test.ts src/monorepo-context-mode.test.ts",
+    "start:remote": "node dist/bridge-main.js",
+    "bootstrap:remote": "node dist/bridge-main.js --install-only",
+    "test": "node --import tsx --test src/*.test.ts",
     "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "bin": {
+    "claustrum-mcp": "dist/bridge-main.js"
   },
   "dependencies": {
     "@claustrum/shared": "workspace:*",
-    "@modelcontextprotocol/sdk": "^1.26.0"
+    "@modelcontextprotocol/sdk": "^1.26.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

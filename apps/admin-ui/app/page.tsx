@@ -32,6 +32,15 @@ type LoginResponse = {
   };
 };
 
+function resolveDeviceLabel(prefix: string): string {
+  if (typeof window === 'undefined') {
+    return `${prefix}-unknown`;
+  }
+  const platform = (navigator.platform || 'browser').replace(/\s+/g, '-');
+  const host = (window.location.hostname || 'localhost').replace(/\s+/g, '-');
+  return `${prefix}-${platform}-${host}`.slice(0, 120);
+}
+
 export default function Page() {
   const [token, setToken] = useState('');
   const [me, setMe] = useState<MeResponse['user'] | null>(null);
@@ -222,6 +231,7 @@ export default function Page() {
           method: 'POST',
           body: JSON.stringify({
             label: welcomeApiKeyLabel.trim() || 'onboarding-default',
+            device_label: resolveDeviceLabel('welcome-setup'),
           }),
         },
         true

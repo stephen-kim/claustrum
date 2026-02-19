@@ -37,11 +37,6 @@ Claustrum はこれをチームで共有できる検索可能なメモリシス�
 この README は概要のみです。詳細なセットアップ、設定、運用手順は GitHub Pages で公開し、ソースは `docs/content` で管理します。
 
 - [Docs Site (GitHub Pages)](https://stephen-kim.github.io/claustrum/)
-- [Docs Source Home (EN)](docs/content/Home.md)
-- [Installation (EN)](docs/content/Installation.md)
-- [Operations (EN)](docs/content/Operations.md)
-- [Security and MCP I/O (EN)](docs/content/Security-and-MCP-IO.md)
-- [Architecture](docs/architecture.md)
 
 
 ## リポジトリ構成

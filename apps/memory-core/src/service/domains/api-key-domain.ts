@@ -16,6 +16,7 @@ import {
   issueSessionToken,
   generateApiKey,
   generateInvitationToken,
+  buildApiKeyPrefix,
   hashApiKey,
   hashOneTimeToken,
   issueOneTimeKeyToken,
@@ -23,23 +24,111 @@ import {
   type AuthInviteApiKeyDeps,
 } from './auth-invite-api-key-shared.js';
 
+function parseOptionalExpiry(raw?: string): Date | null {
+  if (!raw) {
+    return null;
+  }
+  const parsed = new Date(raw);
+  if (!Number.isFinite(parsed.getTime())) {
+    throw new ValidationError('expires_at must be a valid ISO datetime.');
+  }
+  if (parsed.getTime() <= Date.now()) {
+    throw new ValidationError('expires_at must be in the future.');
+  }
+  return parsed;
+}
+
+function requireDeviceLabel(raw?: string): string {
+  const label = (raw || '').trim();
+  if (!label) {
+    throw new ValidationError('device_label is required.');
+  }
+  if (label.length > 120) {
+    throw new ValidationError('device_label must be 120 chars or fewer.');
+  }
+  return label;
+}
+
+async function resolveWorkspaceScopeForUser(args: {
+  deps: AuthInviteApiKeyDeps;
+  userId: string;
+  workspaceKey?: string;
+}): Promise<{ id: string; key: string }> {
+  if (args.workspaceKey) {
+    const workspace = await args.deps.getWorkspaceByKey(args.workspaceKey);
+    const membership = await args.deps.prisma.workspaceMember.findUnique({
+      where: {
+        workspaceId_userId: {
+          workspaceId: workspace.id,
+          userId: args.userId,
+        },
+      },
+      select: { id: true },
+    });
+    if (!membership) {
+      throw new ValidationError('Target user is not a member of the selected workspace.');
+    }
+    return workspace;
+  }
+
+  const membership = await args.deps.prisma.workspaceMember.findFirst({
+    where: { userId: args.userId },
+    orderBy: [{ createdAt: 'asc' }],
+    include: {
+      workspace: {
+        select: {
+          id: true,
+          key: true,
+        },
+      },
+    },
+  });
+  if (!membership) {
+    throw new ValidationError('No workspace membership found for user; provide workspace_key explicitly.');
+  }
+  return membership.workspace;
+}
+
 export async function createSelfApiKeyDomain(
   deps: AuthInviteApiKeyDeps,
-  args: { auth: AuthContext; label?: string; ip?: string }
+  args: {
+    auth: AuthContext;
+    label?: string;
+    workspaceKey?: string;
+    deviceLabel: string;
+    expiresAt?: string;
+    ip?: string;
+  }
 ): Promise<{
   id: string;
   label: string | null;
+  workspace_key: string;
+  key_prefix: string;
+  device_label: string;
+  expires_at: string | null;
   api_key: string;
 }> {
   if (!args.auth.user.id || args.auth.user.source !== 'database') {
     throw new AuthorizationError('Only authenticated users can create API keys.');
   }
+  const workspace = await resolveWorkspaceScopeForUser({
+    deps,
+    userId: args.auth.user.id,
+    workspaceKey: args.workspaceKey,
+  });
+  const deviceLabel = requireDeviceLabel(args.deviceLabel);
+  const expiresAt = parseOptionalExpiry(args.expiresAt);
   const plainKey = generateApiKey();
   const keyHash = hashApiKey(plainKey, deps.securityConfig.apiKeyHashSecret);
+  const keyPrefix = buildApiKeyPrefix(plainKey);
   const created = await deps.prisma.apiKey.create({
     data: {
       key: null,
+      workspaceId: workspace.id,
       keyHash,
+      keyPrefix,
+      deviceLabel,
+      expiresAt,
       userId: args.auth.user.id,
       createdByUserId: args.auth.user.id,
       label: args.label?.trim() || 'self-generated',
@@ -49,25 +138,29 @@ export async function createSelfApiKeyDomain(
       label: true,
     },
   });
-  const auditWorkspace = await deps.resolveAuditWorkspaceForUser(args.auth.user.id);
-  if (auditWorkspace) {
-    await deps.recordAudit({
-      workspaceId: auditWorkspace.id,
-      workspaceKey: auditWorkspace.key,
-      actorUserId: args.auth.user.id,
-      actorUserEmail: args.auth.user.email,
-      action: 'api_key.created',
-      target: {
-        target_user_id: args.auth.user.id,
-        api_key_id: created.id,
-        actor_user_id: args.auth.user.id,
-        ip: args.ip || null,
-      },
-    });
-  }
+  await deps.recordAudit({
+    workspaceId: workspace.id,
+    workspaceKey: workspace.key,
+    actorUserId: args.auth.user.id,
+    actorUserEmail: args.auth.user.email,
+    action: 'api_key.created',
+    target: {
+      target_user_id: args.auth.user.id,
+      api_key_id: created.id,
+      actor_user_id: args.auth.user.id,
+      device_label: deviceLabel,
+      key_prefix: keyPrefix,
+      expires_at: expiresAt ? expiresAt.toISOString() : null,
+      ip: args.ip || null,
+    },
+  });
   return {
     id: created.id,
     label: created.label,
+    workspace_key: workspace.key,
+    key_prefix: keyPrefix,
+    device_label: deviceLabel,
+    expires_at: expiresAt ? expiresAt.toISOString() : null,
     api_key: plainKey,
   };
 }
@@ -79,6 +172,10 @@ export async function listOwnApiKeysDomain(
   keys: Array<{
     id: string;
     label: string | null;
+    workspace_key: string;
+    key_prefix: string;
+    device_label: string;
+    expires_at: Date | null;
     created_at: Date;
     last_used_at: Date | null;
     revoked_at: Date | null;
@@ -93,16 +190,28 @@ export async function listOwnApiKeysDomain(
     select: {
       id: true,
       label: true,
+      keyPrefix: true,
+      deviceLabel: true,
+      expiresAt: true,
       createdAt: true,
       lastUsedAt: true,
       revokedAt: true,
       createdByUserId: true,
+      workspace: {
+        select: {
+          key: true,
+        },
+      },
     },
   });
   return {
     keys: keys.map((key) => ({
       id: key.id,
       label: key.label,
+      workspace_key: key.workspace.key,
+      key_prefix: key.keyPrefix,
+      device_label: key.deviceLabel,
+      expires_at: key.expiresAt,
       created_at: key.createdAt,
       last_used_at: key.lastUsedAt,
       revoked_at: key.revokedAt,
@@ -119,6 +228,10 @@ export async function listUserApiKeysDomain(
   keys: Array<{
     id: string;
     label: string | null;
+    workspace_key: string;
+    key_prefix: string;
+    device_label: string;
+    expires_at: Date | null;
     created_at: Date;
     last_used_at: Date | null;
     revoked_at: Date | null;
@@ -136,10 +249,18 @@ export async function listUserApiKeysDomain(
     select: {
       id: true,
       label: true,
+      keyPrefix: true,
+      deviceLabel: true,
+      expiresAt: true,
       createdAt: true,
       lastUsedAt: true,
       revokedAt: true,
       createdByUserId: true,
+      workspace: {
+        select: {
+          key: true,
+        },
+      },
     },
   });
   return {
@@ -147,6 +268,10 @@ export async function listUserApiKeysDomain(
     keys: keys.map((key) => ({
       id: key.id,
       label: key.label,
+      workspace_key: key.workspace.key,
+      key_prefix: key.keyPrefix,
+      device_label: key.deviceLabel,
+      expires_at: key.expiresAt,
       created_at: key.createdAt,
       last_used_at: key.lastUsedAt,
       revoked_at: key.revokedAt,
@@ -164,6 +289,7 @@ export async function revokeApiKeyDomain(
     select: {
       id: true,
       userId: true,
+      workspaceId: true,
       revokedAt: true,
     },
   });
@@ -181,11 +307,14 @@ export async function revokeApiKeyDomain(
       },
     });
   }
-  const auditWorkspace = await deps.resolveAuditWorkspaceForUser(row.userId);
-  if (auditWorkspace) {
+  const workspace = await deps.prisma.workspace.findUnique({
+    where: { id: row.workspaceId },
+    select: { id: true, key: true },
+  });
+  if (workspace) {
     await deps.recordAudit({
-      workspaceId: auditWorkspace.id,
-      workspaceKey: auditWorkspace.key,
+      workspaceId: workspace.id,
+      workspaceKey: workspace.key,
       actorUserId: args.auth.user.id,
       actorUserEmail: args.auth.user.email,
       action: 'api_key.revoked',
@@ -205,7 +334,15 @@ export async function revokeApiKeyDomain(
 
 export async function resetUserApiKeysDomain(
   deps: AuthInviteApiKeyDeps,
-  args: { auth: AuthContext; userId: string; requestBaseUrl?: string; ip?: string }
+  args: {
+    auth: AuthContext;
+    userId: string;
+    workspaceKey?: string;
+    deviceLabel: string;
+    expiresAt?: string;
+    requestBaseUrl?: string;
+    ip?: string;
+  }
 ): Promise<{ one_time_url: string; expires_at: string }> {
   if (!(await deps.canManageUserKeys(args.auth, args.userId))) {
     throw new AuthorizationError('Not allowed to reset API keys for this user.');
@@ -217,10 +354,18 @@ export async function resetUserApiKeysDomain(
   if (!user) {
     throw new NotFoundError('User not found');
   }
+  const workspace = await resolveWorkspaceScopeForUser({
+    deps,
+    userId: args.userId,
+    workspaceKey: args.workspaceKey,
+  });
+  const deviceLabel = requireDeviceLabel(args.deviceLabel);
 
   const plainKey = generateApiKey();
   const keyHash = hashApiKey(plainKey, deps.securityConfig.apiKeyHashSecret);
-  const expiresAt = new Date(Date.now() + deps.securityConfig.oneTimeTokenTtlSeconds * 1000);
+  const expiresAt = parseOptionalExpiry(args.expiresAt);
+  const oneTimeExpiresAt = new Date(Date.now() + deps.securityConfig.oneTimeTokenTtlSeconds * 1000);
+  const keyPrefix = buildApiKeyPrefix(plainKey);
 
   const result = await deps.prisma.$transaction(async (tx) => {
     await tx.apiKey.updateMany({
@@ -238,6 +383,10 @@ export async function resetUserApiKeysDomain(
         keyHash,
         label: 'reset-generated',
         userId: args.userId,
+        workspaceId: workspace.id,
+        keyPrefix,
+        deviceLabel,
+        expiresAt,
         createdByUserId: args.auth.user.id,
       },
       select: { id: true },
@@ -246,7 +395,7 @@ export async function resetUserApiKeysDomain(
       apiKeyId: created.id,
       apiKey: plainKey,
       userId: args.userId,
-      expiresAtUnixMs: expiresAt.getTime(),
+      expiresAtUnixMs: oneTimeExpiresAt.getTime(),
       secret: deps.securityConfig.oneTimeTokenSecret,
     });
     const tokenHash = hashOneTimeToken(token, deps.securityConfig.oneTimeTokenSecret);
@@ -254,7 +403,7 @@ export async function resetUserApiKeysDomain(
       data: {
         apiKeyId: created.id,
         tokenHash,
-        expiresAt,
+        expiresAt: oneTimeExpiresAt,
         createdByUserId: args.auth.user.id,
       },
     });
@@ -267,26 +416,26 @@ export async function resetUserApiKeysDomain(
   const baseUrl = (deps.securityConfig.publicBaseUrl || args.requestBaseUrl || '').replace(/\/$/, '');
   const oneTimeUrl = `${baseUrl}/v1/api-keys/one-time/${encodeURIComponent(result.token)}`;
 
-  const auditWorkspace = await deps.resolveAuditWorkspaceForUser(args.userId);
-  if (auditWorkspace) {
-    await deps.recordAudit({
-      workspaceId: auditWorkspace.id,
-      workspaceKey: auditWorkspace.key,
-      actorUserId: args.auth.user.id,
-      actorUserEmail: args.auth.user.email,
-      action: 'api_key.reset',
-      target: {
-        target_user_id: args.userId,
-        api_key_id: result.apiKeyId,
-        actor_user_id: args.auth.user.id,
-        ip: args.ip || null,
-      },
-    });
-  }
+  await deps.recordAudit({
+    workspaceId: workspace.id,
+    workspaceKey: workspace.key,
+    actorUserId: args.auth.user.id,
+    actorUserEmail: args.auth.user.email,
+    action: 'api_key.reset',
+    target: {
+      target_user_id: args.userId,
+      api_key_id: result.apiKeyId,
+      actor_user_id: args.auth.user.id,
+      device_label: deviceLabel,
+      key_prefix: keyPrefix,
+      expires_at: expiresAt ? expiresAt.toISOString() : null,
+      ip: args.ip || null,
+    },
+  });
 
   return {
     one_time_url: oneTimeUrl,
-    expires_at: expiresAt.toISOString(),
+    expires_at: oneTimeExpiresAt.toISOString(),
   };
 }
 

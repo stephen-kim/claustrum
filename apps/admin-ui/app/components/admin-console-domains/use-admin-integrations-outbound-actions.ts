@@ -1,26 +1,18 @@
 'use client';
-
-import type { FormEvent } from 'react';
 import type {
   AuditDeliveryQueueResponse,
   AuditSinksResponse,
   DetectionsResponse,
   DetectionRulesResponse,
-  GithubInstallationStatus,
-  GithubTeamMappingsResponse,
-  GithubWebhookEventsResponse,
-  GithubPermissionStatusResponse,
-  GithubPermissionSyncResponse,
-  GithubPermissionPreviewResponse,
-  GithubPermissionCacheStatusResponse,
-  GithubRepoLinksResponse,
-  GithubUserLinksResponse,
   IntegrationProvider,
   IntegrationSettingsResponse,
   OutboundIntegrationType,
   OutboundPolicy,
+  OutboundTemplateVariablesResponse,
   WorkspaceOutboundSettings,
 } from '../../lib/types';
+import { createAdminIntegrationsOutboundGithubActions } from './use-admin-integrations-outbound-github-actions';
+import { createAdminIntegrationsOutboundProviderSaveActions } from './use-admin-integrations-outbound-provider-save-actions';
 import type { AdminCallApi } from './types';
 import type { AdminIntegrationsOutboundState } from './use-admin-integrations-outbound-state';
 
@@ -33,6 +25,10 @@ type IntegrationsOutboundDeps = {
 
 export function useAdminIntegrationsOutboundActions(deps: IntegrationsOutboundDeps) {
   const { callApi, selectedWorkspace, state, setError } = deps;
+  const githubActions = createAdminIntegrationsOutboundGithubActions({
+    callApi,
+    state,
+  });
 
   async function loadWorkspaceOutboundSettings(workspaceKey: string) {
     const settings = await callApi<WorkspaceOutboundSettings>(
@@ -63,13 +59,24 @@ export function useAdminIntegrationsOutboundActions(deps: IntegrationsOutboundDe
       `/v1/outbound-policies/${integrationType}?${query.toString()}`
     );
     state.setOutboundPolicyEnabled(data.enabled);
-    state.setOutboundPolicyMode(data.mode);
     state.setOutboundPolicyStyle(data.style);
     state.setOutboundPolicyLocaleDefault(data.locale_default);
     state.setOutboundPolicySupportedLocales(data.supported_locales);
     state.setOutboundTemplateOverridesJson(JSON.stringify(data.template_overrides || {}, null, 2));
-    state.setOutboundLlmPromptSystem(data.llm_prompt_system || '');
-    state.setOutboundLlmPromptUser(data.llm_prompt_user || '');
+  }
+
+  async function loadOutboundTemplateVariables(
+    workspaceKey: string,
+    integrationType: OutboundIntegrationType
+  ) {
+    const query = new URLSearchParams({
+      workspace_key: workspaceKey,
+      integration_type: integrationType,
+    });
+    const data = await callApi<OutboundTemplateVariablesResponse>(
+      `/v1/outbound/template-variables?${query.toString()}`
+    );
+    state.setOutboundTemplateVariables(data);
   }
 
   async function saveOutboundPolicy() {
@@ -98,16 +105,14 @@ export function useAdminIntegrationsOutboundActions(deps: IntegrationsOutboundDe
         enabled: state.outboundPolicyEnabled,
         locale_default: state.outboundPolicyLocaleDefault,
         supported_locales: state.outboundPolicySupportedLocales,
-        mode: state.outboundPolicyMode,
         style: state.outboundPolicyStyle,
         template_overrides: templateOverrides,
-        llm_prompt_system: state.outboundLlmPromptSystem.trim() || null,
-        llm_prompt_user: state.outboundLlmPromptUser.trim() || null,
         reason: state.outboundPolicyReason.trim() || undefined,
       }),
     });
 
     await loadOutboundPolicy(selectedWorkspace, state.selectedOutboundIntegration);
+    await loadOutboundTemplateVariables(selectedWorkspace, state.selectedOutboundIntegration);
   }
 
   async function loadIntegrations(workspaceKey: string) {
@@ -200,87 +205,6 @@ export function useAdminIntegrationsOutboundActions(deps: IntegrationsOutboundDe
     state.setAuditReasonerGeminiModel(reasoner.gemini_model || '');
     state.setAuditReasonerGeminiBaseUrl(reasoner.gemini_base_url || '');
     state.setAuditReasonerGeminiApiKey('');
-  }
-
-  async function loadGithubInstallation(workspaceKey: string) {
-    const data = await callApi<GithubInstallationStatus>(
-      `/v1/workspaces/${encodeURIComponent(workspaceKey)}/github/installation`
-    );
-    state.setGithubInstallation(data.installation);
-  }
-
-  async function loadGithubRepos(workspaceKey: string) {
-    const data = await callApi<GithubRepoLinksResponse>(
-      `/v1/workspaces/${encodeURIComponent(workspaceKey)}/github/repos`
-    );
-    state.setGithubRepos(data.repos || []);
-  }
-
-  async function loadGithubUserLinks(workspaceKey: string) {
-    const data = await callApi<GithubUserLinksResponse>(
-      `/v1/workspaces/${encodeURIComponent(workspaceKey)}/github/user-links`
-    );
-    state.setGithubUserLinks(data.links || []);
-  }
-
-  async function createGithubUserLink(workspaceKey: string, userId: string, githubLogin: string) {
-    await callApi(`/v1/workspaces/${encodeURIComponent(workspaceKey)}/github/user-links`, {
-      method: 'POST',
-      body: JSON.stringify({
-        user_id: userId,
-        github_login: githubLogin,
-      }),
-    });
-    await loadGithubUserLinks(workspaceKey);
-  }
-
-  async function deleteGithubUserLink(workspaceKey: string, userId: string) {
-    await callApi(
-      `/v1/workspaces/${encodeURIComponent(workspaceKey)}/github/user-links/${encodeURIComponent(userId)}`,
-      {
-        method: 'DELETE',
-      }
-    );
-    await loadGithubUserLinks(workspaceKey);
-  }
-
-  async function loadGithubPermissionStatus(workspaceKey: string) {
-    const data = await callApi<GithubPermissionStatusResponse>(
-      `/v1/workspaces/${encodeURIComponent(workspaceKey)}/github/permission-status`
-    );
-    state.setGithubPermissionStatus(data);
-    return data;
-  }
-
-  async function loadGithubCacheStatus(workspaceKey: string) {
-    const data = await callApi<GithubPermissionCacheStatusResponse>(
-      `/v1/workspaces/${encodeURIComponent(workspaceKey)}/github/cache-status`
-    );
-    state.setGithubPermissionCacheStatus(data);
-    return data;
-  }
-
-  async function previewGithubPermissions(workspaceKey: string, repo: string) {
-    const query = new URLSearchParams({ repo });
-    const data = await callApi<GithubPermissionPreviewResponse>(
-      `/v1/workspaces/${encodeURIComponent(workspaceKey)}/github/permission-preview?${query.toString()}`
-    );
-    state.setGithubPermissionPreview(data);
-    return data;
-  }
-
-  async function loadGithubWebhookDeliveries(workspaceKey: string) {
-    const data = await callApi<GithubWebhookEventsResponse>(
-      `/v1/workspaces/${encodeURIComponent(workspaceKey)}/github/webhook-events`
-    );
-    state.setGithubWebhookDeliveries(data.deliveries || []);
-  }
-
-  async function loadGithubTeamMappings(workspaceKey: string) {
-    const data = await callApi<GithubTeamMappingsResponse>(
-      `/v1/workspaces/${encodeURIComponent(workspaceKey)}/github/team-mappings`
-    );
-    state.setGithubTeamMappings(data.mappings || []);
   }
 
   async function loadAuditSinks(workspaceKey: string) {
@@ -500,137 +424,6 @@ export function useAdminIntegrationsOutboundActions(deps: IntegrationsOutboundDe
     await loadDetections(selectedWorkspace);
   }
 
-  async function createGithubTeamMapping(args: {
-    workspaceKey: string;
-    input: {
-      providerInstallationId?: string | null;
-      githubTeamId: string;
-      githubTeamSlug: string;
-      githubOrgLogin: string;
-      targetType: 'workspace' | 'project';
-      targetKey: string;
-      role: 'OWNER' | 'ADMIN' | 'MEMBER' | 'MAINTAINER' | 'WRITER' | 'READER';
-      enabled?: boolean;
-      priority?: number;
-    };
-  }) {
-    await callApi(`/v1/workspaces/${encodeURIComponent(args.workspaceKey)}/github/team-mappings`, {
-      method: 'POST',
-      body: JSON.stringify({
-        provider_installation_id: args.input.providerInstallationId || null,
-        github_team_id: args.input.githubTeamId,
-        github_team_slug: args.input.githubTeamSlug,
-        github_org_login: args.input.githubOrgLogin,
-        target_type: args.input.targetType,
-        target_key: args.input.targetKey,
-        role: args.input.role,
-        enabled: args.input.enabled ?? true,
-        priority: args.input.priority ?? 100,
-      }),
-    });
-    await loadGithubTeamMappings(args.workspaceKey);
-  }
-
-  async function patchGithubTeamMapping(args: {
-    workspaceKey: string;
-    mappingId: string;
-    input: {
-      providerInstallationId?: string | null;
-      githubTeamId?: string;
-      githubTeamSlug?: string;
-      githubOrgLogin?: string;
-      targetType?: 'workspace' | 'project';
-      targetKey?: string;
-      role?: 'OWNER' | 'ADMIN' | 'MEMBER' | 'MAINTAINER' | 'WRITER' | 'READER';
-      enabled?: boolean;
-      priority?: number;
-    };
-  }) {
-    await callApi(
-      `/v1/workspaces/${encodeURIComponent(args.workspaceKey)}/github/team-mappings/${encodeURIComponent(args.mappingId)}`,
-      {
-        method: 'PATCH',
-        body: JSON.stringify({
-          provider_installation_id: args.input.providerInstallationId,
-          github_team_id: args.input.githubTeamId,
-          github_team_slug: args.input.githubTeamSlug,
-          github_org_login: args.input.githubOrgLogin,
-          target_type: args.input.targetType,
-          target_key: args.input.targetKey,
-          role: args.input.role,
-          enabled: args.input.enabled,
-          priority: args.input.priority,
-        }),
-      }
-    );
-    await loadGithubTeamMappings(args.workspaceKey);
-  }
-
-  async function deleteGithubTeamMapping(workspaceKey: string, mappingId: string) {
-    await callApi(
-      `/v1/workspaces/${encodeURIComponent(workspaceKey)}/github/team-mappings/${encodeURIComponent(mappingId)}`,
-      { method: 'DELETE' }
-    );
-    await loadGithubTeamMappings(workspaceKey);
-  }
-
-  async function syncGithubPermissions(args: {
-    workspaceKey: string;
-    dryRun?: boolean;
-    projectKeyPrefix?: string;
-    repos?: string[];
-  }) {
-    const data = await callApi<GithubPermissionSyncResponse>(
-      `/v1/workspaces/${encodeURIComponent(args.workspaceKey)}/github/sync-permissions`,
-      {
-        method: 'POST',
-        body: JSON.stringify({
-          dry_run: args.dryRun === true,
-          project_key_prefix: args.projectKeyPrefix?.trim() || undefined,
-          repos: args.repos?.map((item) => item.trim()).filter((item) => item.length > 0),
-        }),
-      }
-    );
-    state.setGithubLastPermissionSyncResult(data);
-    await Promise.all([
-      loadGithubPermissionStatus(args.workspaceKey),
-      loadGithubCacheStatus(args.workspaceKey),
-      loadGithubUserLinks(args.workspaceKey),
-      loadGithubRepos(args.workspaceKey),
-    ]);
-    return data;
-  }
-
-  async function generateGithubInstallUrl(workspaceKey: string): Promise<string> {
-    const data = await callApi<{ url: string }>(
-      `/v1/workspaces/${encodeURIComponent(workspaceKey)}/github/install-url`
-    );
-    state.setGithubInstallUrl(data.url);
-    return data.url;
-  }
-
-  async function syncGithubRepos(workspaceKey: string): Promise<{
-    count: number;
-    projects_auto_created: number;
-    projects_auto_linked: number;
-  }> {
-    const data = await callApi<{
-      count: number;
-      projects_auto_created: number;
-      projects_auto_linked: number;
-    }>(
-      `/v1/workspaces/${encodeURIComponent(workspaceKey)}/github/sync-repos`,
-      { method: 'POST' }
-    );
-    state.setGithubLastSyncSummary({
-      count: data.count,
-      projects_auto_created: data.projects_auto_created ?? 0,
-      projects_auto_linked: data.projects_auto_linked ?? 0,
-    });
-    await Promise.all([loadGithubInstallation(workspaceKey), loadGithubRepos(workspaceKey)]);
-    return data;
-  }
-
   async function saveIntegration(
     provider: IntegrationProvider,
     payload: {
@@ -660,174 +453,20 @@ export function useAdminIntegrationsOutboundActions(deps: IntegrationsOutboundDe
     });
     await loadIntegrations(selectedWorkspace);
   }
-
-  async function saveNotionIntegration(event: FormEvent) {
-    event.preventDefault();
-    const config: Record<string, unknown> = {
-      default_parent_page_id: state.notionParentPageId.trim(),
-      write_enabled: state.notionWriteEnabled,
-      write_on_commit: state.notionWriteOnCommit,
-      write_on_merge: state.notionWriteOnMerge,
-    };
-    if (state.notionToken.trim()) {
-      config.token = state.notionToken.trim();
-    }
-    await saveIntegration('notion', {
-      enabled: state.notionEnabled,
-      config,
-      reason: state.integrationReason,
-    });
-  }
-
-  async function saveJiraIntegration(event: FormEvent) {
-    event.preventDefault();
-    const config: Record<string, unknown> = {
-      base_url: state.jiraBaseUrl.trim(),
-      email: state.jiraEmail.trim(),
-      write_on_commit: state.jiraWriteOnCommit,
-      write_on_merge: state.jiraWriteOnMerge,
-    };
-    if (state.jiraToken.trim()) {
-      config.api_token = state.jiraToken.trim();
-    }
-    await saveIntegration('jira', {
-      enabled: state.jiraEnabled,
-      config,
-      reason: state.integrationReason,
-    });
-  }
-
-  async function saveConfluenceIntegration(event: FormEvent) {
-    event.preventDefault();
-    const config: Record<string, unknown> = {
-      base_url: state.confluenceBaseUrl.trim(),
-      email: state.confluenceEmail.trim(),
-      write_on_commit: state.confluenceWriteOnCommit,
-      write_on_merge: state.confluenceWriteOnMerge,
-    };
-    if (state.confluenceToken.trim()) {
-      config.api_token = state.confluenceToken.trim();
-    }
-    await saveIntegration('confluence', {
-      enabled: state.confluenceEnabled,
-      config,
-      reason: state.integrationReason,
-    });
-  }
-
-  async function saveLinearIntegration(event: FormEvent) {
-    event.preventDefault();
-    const config: Record<string, unknown> = {
-      api_url: state.linearApiUrl.trim(),
-      write_on_commit: state.linearWriteOnCommit,
-      write_on_merge: state.linearWriteOnMerge,
-    };
-    if (state.linearApiKey.trim()) {
-      config.api_key = state.linearApiKey.trim();
-    }
-    await saveIntegration('linear', {
-      enabled: state.linearEnabled,
-      config,
-      reason: state.integrationReason,
-    });
-  }
-
-  async function saveSlackIntegration(event: FormEvent) {
-    event.preventDefault();
-    let routes: unknown = [];
-    let severityRules: unknown = [];
-    try {
-      routes = state.slackRoutesJson.trim() ? JSON.parse(state.slackRoutesJson) : [];
-      severityRules = state.slackSeverityRulesJson.trim() ? JSON.parse(state.slackSeverityRulesJson) : [];
-    } catch (parseError) {
-      setError(
-        parseError instanceof Error
-          ? `slack JSON parse error: ${parseError.message}`
-          : 'slack JSON parse error'
-      );
-      return;
-    }
-
-    const config: Record<string, unknown> = {
-      default_channel: state.slackDefaultChannel.trim(),
-      action_prefixes: state.slackActionPrefixes
-        .split(',')
-        .map((item) => item.trim())
-        .filter(Boolean),
-      format: state.slackFormat,
-      include_target_json: state.slackIncludeTargetJson,
-      mask_secrets: state.slackMaskSecrets,
-      routes,
-      severity_rules: severityRules,
-    };
-    if (state.slackWebhookUrl.trim()) {
-      config.webhook_url = state.slackWebhookUrl.trim();
-    }
-
-    await saveIntegration('slack', {
-      enabled: state.slackEnabled,
-      config,
-      reason: state.integrationReason,
-    });
-  }
-
-  async function saveAuditReasonerIntegration(event: FormEvent) {
-    event.preventDefault();
-    const providerOrder = state.auditReasonerOrderCsv
-      .split(',')
-      .map((item) => item.trim().toLowerCase())
-      .filter((item): item is 'openai' | 'claude' | 'gemini' => {
-        return item === 'openai' || item === 'claude' || item === 'gemini';
-      })
-      .filter((item, index, array) => array.indexOf(item) === index);
-
-    if (providerOrder.length === 0) {
-      setError('audit_reasoner provider order is required (openai/claude/gemini).');
-      return;
-    }
-
-    const config: Record<string, unknown> = {
-      provider_order: providerOrder,
-      openai_model: state.auditReasonerOpenAiModel.trim() || null,
-      openai_base_url: state.auditReasonerOpenAiBaseUrl.trim() || null,
-      claude_model: state.auditReasonerClaudeModel.trim() || null,
-      claude_base_url: state.auditReasonerClaudeBaseUrl.trim() || null,
-      gemini_model: state.auditReasonerGeminiModel.trim() || null,
-      gemini_base_url: state.auditReasonerGeminiBaseUrl.trim() || null,
-    };
-    if (state.auditReasonerOpenAiApiKey.trim()) {
-      config.openai_api_key = state.auditReasonerOpenAiApiKey.trim();
-    }
-    if (state.auditReasonerClaudeApiKey.trim()) {
-      config.claude_api_key = state.auditReasonerClaudeApiKey.trim();
-    }
-    if (state.auditReasonerGeminiApiKey.trim()) {
-      config.gemini_api_key = state.auditReasonerGeminiApiKey.trim();
-    }
-
-    await saveIntegration('audit_reasoner', {
-      enabled: state.auditReasonerEnabled,
-      config,
-      reason: state.integrationReason,
-    });
-  }
+  const providerSaveActions = createAdminIntegrationsOutboundProviderSaveActions({
+    state,
+    setError,
+    saveIntegration,
+  });
 
   return {
     loadWorkspaceOutboundSettings,
     saveWorkspaceOutboundSettings,
     loadOutboundPolicy,
+    loadOutboundTemplateVariables,
     saveOutboundPolicy,
     loadIntegrations,
-    loadGithubInstallation,
-    loadGithubRepos,
-    loadGithubUserLinks,
-    createGithubUserLink,
-    deleteGithubUserLink,
-    loadGithubPermissionStatus,
-    loadGithubCacheStatus,
-    previewGithubPermissions,
-    loadGithubWebhookDeliveries,
-    loadGithubTeamMappings,
+    ...githubActions,
     loadAuditSinks,
     loadAuditDeliveries,
     createAuditSink,
@@ -840,18 +479,7 @@ export function useAdminIntegrationsOutboundActions(deps: IntegrationsOutboundDe
     deleteDetectionRule,
     loadDetections,
     updateDetectionStatus,
-    createGithubTeamMapping,
-    patchGithubTeamMapping,
-    deleteGithubTeamMapping,
-    syncGithubPermissions,
-    generateGithubInstallUrl,
-    syncGithubRepos,
-    saveNotionIntegration,
-    saveJiraIntegration,
-    saveConfluenceIntegration,
-    saveLinearIntegration,
-    saveSlackIntegration,
-    saveAuditReasonerIntegration,
+    ...providerSaveActions,
   };
 }
 

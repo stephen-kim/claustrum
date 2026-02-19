@@ -1,3 +1,2 @@
 .next
 out
-EOF && git add /Users/stephen/dev/context-sync/apps/docs-site/.gitignore && git commit -m "chore(docs): remove docs-site build artifacts from source control"

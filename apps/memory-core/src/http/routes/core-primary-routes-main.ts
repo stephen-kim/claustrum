@@ -1,6 +1,13 @@
 import express from 'express';
 import { z } from 'zod';
-import { memorySourceSchema, memoryStatusSchema, memoryTypeSchema } from '@claustrum/shared';
+import {
+  createMemorySchema,
+  createProjectSchema,
+  memorySourceSchema,
+  memoryStatusSchema,
+  memoryTypeSchema,
+  resolveProjectSchema,
+} from '@claustrum/shared';
 import type { MemoryCoreService } from '../../service/index.js';
 import type { AuthedRequest } from '../types.js';
 
@@ -29,9 +36,10 @@ export function registerCorePrimaryMainRoutes(app: express.Express, service: Mem
 
   app.post('/v1/resolve-project', async (req, res, next) => {
     try {
+      const input = resolveProjectSchema.parse(req.body);
       const data = await service.resolveProject({
         auth: (req as AuthedRequest).auth!,
-        input: req.body,
+        input,
       });
       res.json(data);
     } catch (error) {
@@ -41,9 +49,10 @@ export function registerCorePrimaryMainRoutes(app: express.Express, service: Mem
 
   app.post('/v1/memories', async (req, res, next) => {
     try {
+      const input = createMemorySchema.parse(req.body);
       const data = await service.createMemory({
         auth: (req as AuthedRequest).auth!,
-        input: req.body,
+        input,
       });
       res.status(201).json(data);
     } catch (error) {
@@ -143,6 +152,29 @@ export function registerCorePrimaryMainRoutes(app: express.Express, service: Mem
         workspaceKey: query.workspace_key,
         projectKey: query.project_key,
         q: query.q,
+      });
+      res.json(data);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/v1/usage/llm', async (req, res, next) => {
+    try {
+      const query = z
+        .object({
+          workspace_key: z.string().min(1),
+          from: z.string().datetime().optional(),
+          to: z.string().datetime().optional(),
+          group_by: z.enum(['day', 'purpose', 'model']).default('day'),
+        })
+        .parse(req.query);
+      const data = await service.listLlmUsage({
+        auth: (req as AuthedRequest).auth!,
+        workspaceKey: query.workspace_key,
+        from: query.from,
+        to: query.to,
+        groupBy: query.group_by,
       });
       res.json(data);
     } catch (error) {
@@ -277,9 +309,10 @@ export function registerCorePrimaryMainRoutes(app: express.Express, service: Mem
 
   app.post('/v1/projects', async (req, res, next) => {
     try {
+      const input = createProjectSchema.parse(req.body);
       const project = await service.createProject({
         auth: (req as AuthedRequest).auth!,
-        input: req.body,
+        input,
       });
       res.status(201).json(project);
     } catch (error) {

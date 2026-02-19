@@ -87,6 +87,10 @@ export async function recordAuditEntry(args: RecordAuditEntryArgs): Promise<void
           });
           if (reasonerConfig) {
             const aiReason = await args.auditReasoner.generateReason(reasonerConfig, {
+              workspaceId: args.workspaceId,
+              projectId: args.projectId,
+              actorUserId: args.actorUserId,
+              correlationId: inferredCorrelationId || undefined,
               action: args.action,
               actorUserEmail: args.actorUserEmail,
               target,

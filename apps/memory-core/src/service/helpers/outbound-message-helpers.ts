@@ -2,7 +2,6 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import {
   defaultOutboundLocales,
   outboundIntegrationTypeSchema,
-  outboundModeSchema,
   outboundStyleSchema,
   type OutboundIntegrationType,
   type OutboundMode,
@@ -12,7 +11,11 @@ import type { AuthContext } from '../../auth.js';
 import { assertWorkspaceAccess, assertWorkspaceAdmin } from '../access-control.js';
 import { diffFields, normalizeReason } from '../audit-utils.js';
 import { ValidationError } from '../errors.js';
-import { renderOutboundMessage, resolveOutboundLocale } from '../outbound-renderer.js';
+import {
+  buildOutboundTemplateVariablesCatalog,
+  renderOutboundMessage,
+  resolveOutboundLocale,
+} from '../outbound-renderer.js';
 import { getEffectiveWorkspaceSettings } from '../workspace-resolution.js';
 
 type DbClient = PrismaClient | Prisma.TransactionClient;
@@ -59,6 +62,8 @@ type OutboundPolicyResponse = {
   llm_prompt_user: string | null;
 };
 
+const OUTBOUND_ENGINE_MODE: OutboundMode = 'template';
+
 function normalizeLocale(input: unknown, fallback: string): string {
   const value = typeof input === 'string' ? input.trim().toLowerCase() : '';
   if (!value) {
@@ -100,8 +105,7 @@ function toPolicyResponse(args: {
     args.row?.supportedLocales,
     args.workspaceSupportedLocales
   );
-  const modeParsed = outboundModeSchema.safeParse(args.row?.mode || 'template');
-  const mode: OutboundMode = modeParsed.success ? modeParsed.data : 'template';
+  const mode: OutboundMode = OUTBOUND_ENGINE_MODE;
   const styleParsed = outboundStyleSchema.safeParse(args.row?.style || 'short');
   const style: OutboundStyle = styleParsed.success ? styleParsed.data : 'short';
   const templateOverrides =
@@ -152,7 +156,7 @@ export async function renderOutboundForWorkspace(args: {
           ...policy,
           locale_default: settings.defaultOutboundLocale,
           supported_locales: settings.supportedOutboundLocales,
-          mode: 'template',
+          mode: OUTBOUND_ENGINE_MODE,
           style: 'short',
           template_overrides: {},
         };
@@ -346,8 +350,7 @@ export async function updateOutboundPolicyHandler(
     localeDefault = supportedLocales[0] || 'en';
   }
 
-  const modeParsed = outboundModeSchema.safeParse(args.mode ?? existing?.mode ?? 'template');
-  const mode: OutboundMode = modeParsed.success ? modeParsed.data : 'template';
+  const mode: OutboundMode = OUTBOUND_ENGINE_MODE;
   const styleParsed = outboundStyleSchema.safeParse(args.style ?? existing?.style ?? 'short');
   const style: OutboundStyle = styleParsed.success ? styleParsed.data : 'short';
   const templateOverrides =
@@ -430,6 +433,39 @@ export async function updateOutboundPolicyHandler(
       workspaceDefaultLocale: settings.defaultOutboundLocale,
       workspaceSupportedLocales: settings.supportedOutboundLocales,
       row: saved,
+    }),
+  };
+}
+
+export async function listOutboundTemplateVariablesHandler(
+  deps: OutboundDeps,
+  args: {
+    auth: AuthContext;
+    workspaceKey: string;
+    integrationType: string;
+  }
+) {
+  const workspace = await deps.getWorkspaceByKey(args.workspaceKey);
+  await assertWorkspaceAdmin(deps.prisma, args.auth, workspace.id);
+  const integrationType = normalizeIntegrationType(args.integrationType);
+  const row = await deps.prisma.outboundMessagePolicy.findUnique({
+    where: {
+      workspaceId_integrationType: {
+        workspaceId: workspace.id,
+        integrationType,
+      },
+    },
+  });
+  const templateOverrides =
+    row?.templateOverrides && typeof row.templateOverrides === 'object'
+      ? (row.templateOverrides as Record<string, unknown>)
+      : {};
+
+  return {
+    workspace_key: workspace.key,
+    ...buildOutboundTemplateVariablesCatalog({
+      integrationType,
+      templateOverrides,
     }),
   };
 }

@@ -39,14 +39,8 @@ Claustrum turns that into a shared, queryable memory system for teams.
 This README is intentionally short. Detailed setup/config/operations are published on GitHub Pages and sourced from `docs/content`.
 
 - [Docs Site (GitHub Pages)](https://stephen-kim.github.io/claustrum/)
-- [Docs Source Home (EN)](docs/content/Home.md)
-- [Installation (EN)](docs/content/Installation.md)
-- [Operations (EN)](docs/content/Operations.md)
-- [Security and MCP I/O (EN)](docs/content/Security-and-MCP-IO.md)
-- [Onboarding (EN)](docs/content/Onboarding.md)
-- [API Keys and Security (EN)](docs/content/API-Keys-and-Security.md)
-- [Outbound Locales and Prompt Tuning (EN)](docs/content/Outbound-Locales.md)
-- [Architecture](docs/architecture.md)
+- One-line MCP config helper:
+  `curl -fsSL https://raw.githubusercontent.com/stephen-kim/claustrum/main/scripts/mcp-config-helper.js -o ./claustrum-mcp-config-helper.js && node ./claustrum-mcp-config-helper.js`
 
 
 ## Repository Layout

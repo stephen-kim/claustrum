@@ -7,6 +7,7 @@ import { MemoriesPanel } from '../memories-panel';
 import { RawEventsPanel } from '../raw-events-panel';
 import { RawSearchPanel } from '../raw-search-panel';
 import { ContextDebugPanel } from '../context-debug-panel';
+import { LlmUsagePanel } from '../llm-usage-panel';
 import type { ImportItem, MemoryItem, Project } from '../../lib/types';
 import type { AdminAuthInviteApiKeyActions } from '../admin-console-domains/use-admin-auth-invite-api-key-actions';
 import type { AdminAuthInviteApiKeyState } from '../admin-console-domains/use-admin-auth-invite-api-key-state';
@@ -188,6 +189,19 @@ export function AdminActivityPanels(props: Props) {
         loadAccessTimeline={props.memoryActions.loadAccessTimeline}
         loadMoreAccessTimeline={props.memoryActions.loadMoreAccessTimeline}
         exportAccessTimeline={props.memoryActions.exportAccessTimeline}
+      />
+
+      <LlmUsagePanel
+        selectedWorkspace={props.selectedWorkspace}
+        groupBy={props.memoryState.llmUsageGroupBy}
+        setGroupBy={props.memoryState.setLlmUsageGroupBy}
+        from={props.memoryState.llmUsageFrom}
+        setFrom={props.memoryState.setLlmUsageFrom}
+        to={props.memoryState.llmUsageTo}
+        setTo={props.memoryState.setLlmUsageTo}
+        totals={props.memoryState.llmUsageTotals}
+        items={props.memoryState.llmUsageItems}
+        loadUsage={props.memoryActions.loadLlmUsage}
       />
 
       <ContextDebugPanel

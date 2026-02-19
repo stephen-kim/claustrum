@@ -25,6 +25,7 @@ import { ConfluenceClientAdapter } from '../integrations/confluence-client.js';
 import { LinearClientAdapter } from '../integrations/linear-client.js';
 import type { SlackAuditNotifier, SlackDeliveryConfig } from '../integrations/audit-slack-notifier.js';
 import { AuditReasoner } from '../integrations/audit-reasoner.js';
+import type { LlmClient } from '../integrations/llm-client.js';
 import { diffFields, normalizeReason } from './audit-utils.js';
 import {
   buildAccessAuditParams,
@@ -49,6 +50,7 @@ import {
   ValidationError,
 } from './errors.js';
 import {
+  buildApiKeyPrefix,
   generateApiKey,
   generateInvitationToken,
   hashApiKey,
@@ -168,8 +170,10 @@ import {
   handleGitEventHandler,
   listRawEventsHandler,
 } from './helpers/git-events-helpers.js';
+import { listLlmUsageHandler, type LlmUsageGroupBy } from './helpers/llm-usage-helpers.js';
 import {
   getOutboundPolicyHandler,
+  listOutboundTemplateVariablesHandler,
   getWorkspaceOutboundSettingsHandler,
   renderOutboundHandler,
   updateOutboundPolicyHandler,
@@ -265,6 +269,7 @@ export class MemoryCoreService {
     private readonly linearClient?: LinearClientAdapter,
     private readonly auditSlackNotifier?: SlackAuditNotifier,
     private readonly auditReasoner?: AuditReasoner,
+    private readonly llmClient?: LlmClient,
     private readonly integrationLockedProviders: ReadonlySet<IntegrationProvider> = new Set(),
     private readonly auditReasonerEnvConfig: AuditReasonerEnvConfig = {
       enabled: false,
@@ -1631,10 +1636,17 @@ export class MemoryCoreService {
   async createSelfApiKey(args: {
     auth: AuthContext;
     label?: string;
+    workspaceKey?: string;
+    deviceLabel: string;
+    expiresAt?: string;
     ip?: string;
   }): Promise<{
     id: string;
     label: string | null;
+    workspace_key: string;
+    key_prefix: string;
+    device_label: string;
+    expires_at: string | null;
     api_key: string;
   }> {
     return createSelfApiKeyDomain(
@@ -1655,6 +1667,10 @@ export class MemoryCoreService {
     keys: Array<{
       id: string;
       label: string | null;
+      workspace_key: string;
+      key_prefix: string;
+      device_label: string;
+      expires_at: Date | null;
       created_at: Date;
       last_used_at: Date | null;
       revoked_at: Date | null;
@@ -1683,6 +1699,10 @@ export class MemoryCoreService {
     keys: Array<{
       id: string;
       label: string | null;
+      workspace_key: string;
+      key_prefix: string;
+      device_label: string;
+      expires_at: Date | null;
       created_at: Date;
       last_used_at: Date | null;
       revoked_at: Date | null;
@@ -1725,6 +1745,9 @@ export class MemoryCoreService {
   async resetUserApiKeys(args: {
     auth: AuthContext;
     userId: string;
+    workspaceKey?: string;
+    deviceLabel: string;
+    expiresAt?: string;
     requestBaseUrl?: string;
     ip?: string;
   }): Promise<{ one_time_url: string; expires_at: string }> {
@@ -1931,6 +1954,8 @@ export class MemoryCoreService {
     workspaceKey: string;
     userId: string;
     label?: string;
+    deviceLabel: string;
+    expiresAt?: string;
   }) {
     const workspace = await this.getWorkspaceByKey(args.workspaceKey);
     await assertWorkspaceAdmin(this.prisma, args.auth, workspace.id);
@@ -1946,13 +1971,29 @@ export class MemoryCoreService {
     if (!membership) {
       throw new ValidationError('Target user is not a workspace member.');
     }
+    const normalizedDeviceLabel = args.deviceLabel.trim();
+    if (!normalizedDeviceLabel) {
+      throw new ValidationError('device_label is required.');
+    }
     const plainKey = generateApiKey();
     const keyHash = hashApiKey(plainKey, this.securityConfig.apiKeyHashSecret);
-    const expiresAt = new Date(Date.now() + this.securityConfig.oneTimeTokenTtlSeconds * 1000);
+    const keyPrefix = buildApiKeyPrefix(plainKey);
+    const oneTimeExpiresAt = new Date(Date.now() + this.securityConfig.oneTimeTokenTtlSeconds * 1000);
+    const keyExpiresAt = args.expiresAt ? new Date(args.expiresAt) : null;
+    if (keyExpiresAt && !Number.isFinite(keyExpiresAt.getTime())) {
+      throw new ValidationError('expires_at must be a valid ISO datetime.');
+    }
+    if (keyExpiresAt && keyExpiresAt.getTime() <= Date.now()) {
+      throw new ValidationError('expires_at must be in the future.');
+    }
     const created = await this.prisma.apiKey.create({
       data: {
         key: null,
+        workspaceId: workspace.id,
         keyHash,
+        keyPrefix,
+        deviceLabel: normalizedDeviceLabel,
+        expiresAt: keyExpiresAt,
         userId: args.userId,
         createdByUserId: args.auth.user.id,
         label: args.label?.trim() || 'workspace-issued',
@@ -1963,7 +2004,7 @@ export class MemoryCoreService {
       apiKeyId: created.id,
       apiKey: plainKey,
       userId: args.userId,
-      expiresAtUnixMs: expiresAt.getTime(),
+      expiresAtUnixMs: oneTimeExpiresAt.getTime(),
       secret: this.securityConfig.oneTimeTokenSecret,
     });
     const tokenHash = hashOneTimeToken(token, this.securityConfig.oneTimeTokenSecret);
@@ -1971,7 +2012,7 @@ export class MemoryCoreService {
       data: {
         apiKeyId: created.id,
         tokenHash,
-        expiresAt,
+        expiresAt: oneTimeExpiresAt,
         createdByUserId: args.auth.user.id,
       },
     });
@@ -1985,16 +2026,23 @@ export class MemoryCoreService {
         target_user_id: args.userId,
         api_key_id: created.id,
         actor_user_id: args.auth.user.id,
+        key_prefix: keyPrefix,
+        device_label: normalizedDeviceLabel,
+        expires_at: keyExpiresAt ? keyExpiresAt.toISOString() : null,
       },
     });
     const baseUrl = (this.securityConfig.publicBaseUrl || '').replace(/\/$/, '');
     return {
       api_key_id: created.id,
+      workspace_key: workspace.key,
       user_id: args.userId,
+      key_prefix: keyPrefix,
+      device_label: normalizedDeviceLabel,
+      key_expires_at: keyExpiresAt ? keyExpiresAt.toISOString() : null,
       label: created.label,
       created_at: created.createdAt,
       one_time_url: `${baseUrl}/v1/api-keys/one-time/${encodeURIComponent(token)}`,
-      expires_at: expiresAt.toISOString(),
+      expires_at: oneTimeExpiresAt.toISOString(),
     };
   }
 
@@ -2016,12 +2064,17 @@ export class MemoryCoreService {
     }
     const keys = await this.prisma.apiKey.findMany({
       where: {
+        workspaceId: workspace.id,
         userId: args.userId ? args.userId : { in: userIds },
       },
       orderBy: [{ createdAt: 'desc' }],
       select: {
         id: true,
+        workspaceId: true,
         userId: true,
+        keyPrefix: true,
+        deviceLabel: true,
+        expiresAt: true,
         label: true,
         createdAt: true,
         revokedAt: true,
@@ -2032,7 +2085,11 @@ export class MemoryCoreService {
       workspace_key: workspace.key,
       keys: keys.map((key) => ({
         id: key.id,
+        workspace_id: key.workspaceId,
         user_id: key.userId,
+        key_prefix: key.keyPrefix,
+        device_label: key.deviceLabel,
+        expires_at: key.expiresAt,
         label: key.label,
         created_at: key.createdAt,
         revoked_at: key.revokedAt,
@@ -2052,12 +2109,16 @@ export class MemoryCoreService {
       where: { id: args.apiKeyId },
       select: {
         id: true,
+        workspaceId: true,
         userId: true,
         revokedAt: true,
       },
     });
     if (!row) {
       throw new NotFoundError('API key not found');
+    }
+    if (row.workspaceId !== workspace.id) {
+      throw new ValidationError('API key is not scoped to this workspace.');
     }
     const member = await this.prisma.workspaceMember.findUnique({
       where: {
@@ -2699,6 +2760,14 @@ export class MemoryCoreService {
     return renderOutboundHandler(this.getOutboundDeps(), args);
   }
 
+  async listOutboundTemplateVariables(args: {
+    auth: AuthContext;
+    workspaceKey: string;
+    integrationType: string;
+  }) {
+    return listOutboundTemplateVariablesHandler(this.getOutboundDeps(), args);
+  }
+
   async listProjectMappings(args: {
     auth: AuthContext;
     workspaceKey: string;
@@ -3286,6 +3355,24 @@ export class MemoryCoreService {
     return listAccessAuditTimelineHandler(this.getIntegrationOpsDeps(), args);
   }
 
+  async listLlmUsage(args: {
+    auth: AuthContext;
+    workspaceKey: string;
+    from?: string;
+    to?: string;
+    groupBy: LlmUsageGroupBy;
+  }) {
+    return listLlmUsageHandler({
+      prisma: this.prisma,
+      auth: args.auth,
+      getWorkspaceByKey: (workspaceKey: string) => this.getWorkspaceByKey(workspaceKey),
+      workspaceKey: args.workspaceKey,
+      from: args.from,
+      to: args.to,
+      groupBy: args.groupBy,
+    });
+  }
+
   async createAuditExportStream(args: {
     auth: AuthContext;
     workspaceKey: string;
@@ -3527,10 +3614,14 @@ export class MemoryCoreService {
     workspaceId: string;
     actorUserId: string;
   }): Promise<void> {
+    if (!this.llmClient) {
+      return;
+    }
     return runDecisionExtractionBatchForWorkspace({
       prisma: this.prisma,
       workspaceId: args.workspaceId,
       actorUserId: args.actorUserId,
+      llmClient: this.llmClient,
       getDecisionLlmConfig: (workspaceId: string) => this.getDecisionLlmConfig(workspaceId),
       updateMemoryEmbedding: (memoryId: string, content: string) =>
         this.updateMemoryEmbedding(memoryId, content),

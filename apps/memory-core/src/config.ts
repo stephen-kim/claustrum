@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'silent';
 export type IntegrationProviderKey =
   | 'notion'
@@ -8,6 +10,15 @@ export type IntegrationProviderKey =
   | 'audit_reasoner';
 export type AuditReasonerProvider = 'openai' | 'claude' | 'gemini';
 const AUDIT_REASONER_PROVIDER_ORDER_DEFAULT: AuditReasonerProvider[] = ['openai', 'claude', 'gemini'];
+
+const coreEnvSchema = z
+  .object({
+    DATABASE_URL: z.string().trim().min(1, 'DATABASE_URL is required'),
+    MEMORY_CORE_PORT: z.coerce.number().int().min(1).max(65535).optional(),
+    MEMORY_CORE_HOST: z.string().trim().min(1).optional(),
+    MEMORY_CORE_LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error', 'silent']).optional(),
+  })
+  .passthrough();
 
 export type MemoryCoreConfig = {
   port: number;
@@ -63,12 +74,15 @@ export type MemoryCoreConfig = {
 };
 
 export function loadConfig(): MemoryCoreConfig {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    throw new Error(
-      'DATABASE_URL is required. Example(localdb): postgres://<user>:<pass>@postgres:5432/<db>, example(external): postgres://<user>:<pass>@<rds-endpoint>:5432/<db>?sslmode=require'
-    );
+  const envParsed = coreEnvSchema.safeParse(process.env);
+  if (!envParsed.success) {
+    const details = envParsed.error.issues
+      .map((issue) => `${issue.path.join('.') || 'env'}: ${issue.message}`)
+      .join('; ');
+    throw new Error(`Invalid environment configuration: ${details}`);
   }
+  const env = envParsed.data;
+  const databaseUrl = env.DATABASE_URL;
 
   const rawKeys = parseApiKeys();
   const auditReasonerProviderOrder = parseAuditReasonerProviderOrder();
@@ -81,10 +95,10 @@ export function loadConfig(): MemoryCoreConfig {
   );
 
   return {
-    port: Number(process.env.MEMORY_CORE_PORT || 8080),
-    host: process.env.MEMORY_CORE_HOST || '0.0.0.0',
+    port: env.MEMORY_CORE_PORT ?? 8080,
+    host: env.MEMORY_CORE_HOST || '0.0.0.0',
     databaseUrl,
-    logLevel: normalizeLogLevel(process.env.MEMORY_CORE_LOG_LEVEL),
+    logLevel: normalizeLogLevel(env.MEMORY_CORE_LOG_LEVEL),
     allowBootstrapAdmin: parseBoolean(process.env.MEMORY_CORE_ALLOW_BOOTSTRAP_ADMIN || 'true'),
     authSessionSecret:
       (process.env.MEMORY_CORE_AUTH_SESSION_SECRET || '').trim() ||

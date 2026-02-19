@@ -1,10 +1,12 @@
 {
   "name": "@claustrum/docs-site",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node ../../scripts/generate-openapi.mjs",
     "dev": "next dev -p 3001",
+    "prebuild": "node ../../scripts/generate-openapi.mjs",
     "build": "next build",
     "start": "next start -p 3001",
     "test": "node -e \"console.log('docs-site ok')\"",

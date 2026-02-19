@@ -18,8 +18,8 @@ import type {
   IntegrationSettingsResponse,
   OutboundIntegrationType,
   OutboundLocale,
-  OutboundMode,
   OutboundStyle,
+  OutboundTemplateVariablesResponse,
 } from '../../lib/types';
 
 export const DEFAULT_INTEGRATION_STATES: IntegrationSettingsResponse['integrations'] = {
@@ -50,15 +50,14 @@ export function useAdminIntegrationsOutboundState() {
   const [selectedOutboundIntegration, setSelectedOutboundIntegration] =
     useState<OutboundIntegrationType>('slack');
   const [outboundPolicyEnabled, setOutboundPolicyEnabled] = useState(true);
-  const [outboundPolicyMode, setOutboundPolicyMode] = useState<OutboundMode>('template');
   const [outboundPolicyStyle, setOutboundPolicyStyle] = useState<OutboundStyle>('short');
   const [outboundPolicyLocaleDefault, setOutboundPolicyLocaleDefault] = useState<OutboundLocale>('en');
   const [outboundPolicySupportedLocales, setOutboundPolicySupportedLocales] = useState<
     OutboundLocale[]
   >(['en', 'ko', 'ja', 'es', 'zh']);
   const [outboundTemplateOverridesJson, setOutboundTemplateOverridesJson] = useState('{}');
-  const [outboundLlmPromptSystem, setOutboundLlmPromptSystem] = useState('');
-  const [outboundLlmPromptUser, setOutboundLlmPromptUser] = useState('');
+  const [outboundTemplateVariables, setOutboundTemplateVariables] =
+    useState<OutboundTemplateVariablesResponse | null>(null);
   const [outboundPolicyReason, setOutboundPolicyReason] = useState('');
 
   const [integrationStates, setIntegrationStates] = useState<IntegrationSettingsResponse['integrations']>(
@@ -246,13 +245,11 @@ export function useAdminIntegrationsOutboundState() {
     setOutboundSettingsReason('');
     setSelectedOutboundIntegration('slack');
     setOutboundPolicyEnabled(true);
-    setOutboundPolicyMode('template');
     setOutboundPolicyStyle('short');
     setOutboundPolicyLocaleDefault('en');
     setOutboundPolicySupportedLocales(['en', 'ko', 'ja', 'es', 'zh']);
     setOutboundTemplateOverridesJson('{}');
-    setOutboundLlmPromptSystem('');
-    setOutboundLlmPromptUser('');
+    setOutboundTemplateVariables(null);
     setOutboundPolicyReason('');
     setGithubInstallation(null);
     setGithubRepos([]);
@@ -315,8 +312,6 @@ export function useAdminIntegrationsOutboundState() {
     setSelectedOutboundIntegration,
     outboundPolicyEnabled,
     setOutboundPolicyEnabled,
-    outboundPolicyMode,
-    setOutboundPolicyMode,
     outboundPolicyStyle,
     setOutboundPolicyStyle,
     outboundPolicyLocaleDefault,
@@ -325,10 +320,8 @@ export function useAdminIntegrationsOutboundState() {
     setOutboundPolicySupportedLocales,
     outboundTemplateOverridesJson,
     setOutboundTemplateOverridesJson,
-    outboundLlmPromptSystem,
-    setOutboundLlmPromptSystem,
-    outboundLlmPromptUser,
-    setOutboundLlmPromptUser,
+    outboundTemplateVariables,
+    setOutboundTemplateVariables,
     outboundPolicyReason,
     setOutboundPolicyReason,
     integrationStates,

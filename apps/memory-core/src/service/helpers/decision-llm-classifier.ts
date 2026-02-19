@@ -1,8 +1,8 @@
 import type { RawEventType } from '@prisma/client';
 import type { AuditReasonerConfig } from '../../integrations/audit-reasoner.js';
 import type { AuditReasonerProvider } from '../../config.js';
+import type { LlmClient } from '../../integrations/llm-client.js';
 
-const REQUEST_TIMEOUT_MS = 15000;
 const MAX_MESSAGE_LEN = 2000;
 const MAX_FILES = 200;
 const MAX_FILES_TEXT_LEN = 4000;
@@ -28,12 +28,15 @@ type ProviderConfig = {
 
 type RawEventForClassification = {
   id: string;
+  workspaceId: string;
+  projectId: string;
   eventType: RawEventType;
   commitSha?: string | null;
   commitMessage?: string | null;
   branch?: string | null;
   changedFiles: string[];
   metadata?: Record<string, unknown>;
+  actorUserId?: string | null;
 };
 
 export type DecisionLlmClassification = {
@@ -49,6 +52,7 @@ export type DecisionLlmClassification = {
 
 export async function classifyDecisionFromRawEvent(args: {
   config: AuditReasonerConfig;
+  llmClient: LlmClient;
   event: RawEventForClassification;
 }): Promise<DecisionLlmClassification | undefined> {
   const prompt = buildClassifierUserPrompt(args.event);
@@ -63,28 +67,23 @@ export async function classifyDecisionFromRawEvent(args: {
       continue;
     }
     try {
-      const rawText =
-        provider === 'openai'
-          ? await classifyWithOpenAi({
-              apiKey,
-              model,
-              baseUrl: providerConfig?.baseUrl,
-              prompt,
-            })
-          : provider === 'claude'
-            ? await classifyWithClaude({
-                apiKey,
-                model,
-                baseUrl: providerConfig?.baseUrl,
-                prompt,
-              })
-            : await classifyWithGemini({
-                apiKey,
-                model,
-                baseUrl: providerConfig?.baseUrl,
-                prompt,
-              });
-      const normalized = normalizeClassificationResponse(rawText);
+      const completion = await args.llmClient.completeText({
+        workspaceId: args.event.workspaceId,
+        projectId: args.event.projectId,
+        actorUserId: args.event.actorUserId || null,
+        systemActor: 'decision_extractor',
+        purpose: 'decision_extract',
+        correlationId: args.event.id,
+        provider,
+        model,
+        apiKey,
+        baseUrl: providerConfig?.baseUrl,
+        systemPrompt: DECISION_CLASSIFIER_SYSTEM_PROMPT,
+        userPrompt: prompt,
+        temperature: 0.1,
+        maxOutputTokens: 500,
+      });
+      const normalized = normalizeClassificationResponse(completion.text);
       if (!normalized) {
         continue;
       }
@@ -92,7 +91,7 @@ export async function classifyDecisionFromRawEvent(args: {
         ...normalized,
         provider,
         model,
-        raw_text: rawText,
+        raw_text: completion.text,
       };
     } catch {
       // Keep provider fallback non-blocking.
@@ -173,11 +172,7 @@ function normalizeClassificationResponse(rawText: string): Omit<
   };
 }
 
-function normalizeStringArray(
-  input: unknown,
-  maxItems: number,
-  maxLen: number
-): string[] {
+function normalizeStringArray(input: unknown, maxItems: number, maxLen: number): string[] {
   if (!Array.isArray(input)) {
     return [];
   }
@@ -224,130 +219,6 @@ function tryParseJson(input: string): Record<string, unknown> | null {
     return value as Record<string, unknown>;
   } catch {
     return null;
-  }
-}
-
-async function classifyWithOpenAi(args: {
-  model: string;
-  apiKey: string;
-  baseUrl?: string;
-  prompt: string;
-}): Promise<string> {
-  const endpoint = `${(args.baseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '')}/chat/completions`;
-  const response = await fetchWithTimeout(endpoint, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${args.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: args.model,
-      temperature: 0.1,
-      max_tokens: 500,
-      messages: [
-        { role: 'system', content: DECISION_CLASSIFIER_SYSTEM_PROMPT },
-        { role: 'user', content: args.prompt },
-      ],
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(`OpenAI HTTP ${response.status}`);
-  }
-  const payload = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string | null } }>;
-  };
-  return (payload.choices?.[0]?.message?.content || '').trim();
-}
-
-async function classifyWithClaude(args: {
-  model: string;
-  apiKey: string;
-  baseUrl?: string;
-  prompt: string;
-}): Promise<string> {
-  const endpoint = `${(args.baseUrl || 'https://api.anthropic.com').replace(/\/+$/, '')}/v1/messages`;
-  const response = await fetchWithTimeout(endpoint, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': args.apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: args.model,
-      max_tokens: 500,
-      temperature: 0.1,
-      system: DECISION_CLASSIFIER_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: args.prompt }],
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(`Claude HTTP ${response.status}`);
-  }
-  const payload = (await response.json()) as {
-    content?: Array<{ type?: string; text?: string }>;
-  };
-  return (
-    payload.content
-      ?.filter((item) => item.type === 'text')
-      .map((item) => item.text || '')
-      .join('\n')
-      .trim() || ''
-  );
-}
-
-async function classifyWithGemini(args: {
-  model: string;
-  apiKey: string;
-  baseUrl?: string;
-  prompt: string;
-}): Promise<string> {
-  const endpointBase = (args.baseUrl || 'https://generativelanguage.googleapis.com/v1beta').replace(
-    /\/+$/,
-    ''
-  );
-  const endpoint = `${endpointBase}/models/${encodeURIComponent(
-    args.model
-  )}:generateContent?key=${encodeURIComponent(args.apiKey)}`;
-  const response = await fetchWithTimeout(endpoint, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      systemInstruction: {
-        parts: [{ text: DECISION_CLASSIFIER_SYSTEM_PROMPT }],
-      },
-      contents: [{ role: 'user', parts: [{ text: args.prompt }] }],
-      generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 500,
-      },
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(`Gemini HTTP ${response.status}`);
-  }
-  const payload = (await response.json()) as {
-    candidates?: Array<{
-      content?: { parts?: Array<{ text?: string }> };
-    }>;
-  };
-  return (
-    payload.candidates?.[0]?.content?.parts?.map((item) => item.text || '').join('\n').trim() || ''
-  );
-}
-
-async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    return await fetch(url, {
-      ...init,
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timeout);
   }
 }
 

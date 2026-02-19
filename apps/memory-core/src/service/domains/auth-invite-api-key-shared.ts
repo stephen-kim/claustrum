@@ -18,6 +18,7 @@ import { issueSessionToken } from '../../security/session-token.js';
 import {
   generateApiKey,
   generateInvitationToken,
+  buildApiKeyPrefix,
   hashApiKey,
   hashOneTimeToken,
 } from '../../security/api-key.js';
@@ -68,6 +69,7 @@ export {
   issueSessionToken,
   generateApiKey,
   generateInvitationToken,
+  buildApiKeyPrefix,
   hashApiKey,
   hashOneTimeToken,
   issueOneTimeKeyToken,

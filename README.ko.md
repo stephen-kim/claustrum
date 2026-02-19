@@ -39,14 +39,8 @@ Claustrum은 이 문제를 팀 단위의 공유 메모리 시스템으로 바꿉
 이 README는 개요만 유지합니다. 상세 설치/설정/운영 문서는 GitHub Pages로 배포되며 소스는 `docs/content`에 있습니다.
 
 - [문서 사이트 (GitHub Pages)](https://stephen-kim.github.io/claustrum/)
-- [문서 소스 홈 (KO)](docs/content/Home.ko.md)
-- [설치 가이드 (KO)](docs/content/Installation.ko.md)
-- [운영 가이드 (KO)](docs/content/Operations.ko.md)
-- [보안 및 MCP I/O (KO)](docs/content/Security-and-MCP-IO.ko.md)
-- [온보딩 가이드 (KO)](docs/content/Onboarding.ko.md)
-- [API 키 보안 가이드 (KO)](docs/content/API-Keys-and-Security.ko.md)
-- [Outbound 로케일/프롬프트 정책 (KO)](docs/content/Outbound-Locales.ko.md)
-- [아키텍처 문서](docs/architecture.md)
+- MCP 설정 원라인 헬퍼:
+  `curl -fsSL https://raw.githubusercontent.com/stephen-kim/claustrum/main/scripts/mcp-config-helper.js -o ./claustrum-mcp-config-helper.js && node ./claustrum-mcp-config-helper.js`
 
 
 ## 저장소 구조

@@ -9,7 +9,8 @@
   - `apps/mcp-adapter`: MCP stdio adapter that calls memory-core over HTTP.
   - `apps/admin-ui`: Next.js App Router admin dashboard.
   - `packages/shared`: shared Zod schemas/types used by multiple apps.
-- Legacy single-package code still exists in root `src/`, `bin/`, and `dist/`. Do not break legacy scripts unless the task explicitly requires it.
+- MCP server/runtime implementation lives in `apps/mcp-adapter`.
+- Root legacy `src/` and setup CLI `bin/` were removed; treat root as workspace orchestrator.
 
 
 ## Build, Test, and Development Commands

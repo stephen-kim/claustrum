@@ -9,12 +9,25 @@ import {
 } from '../permissions.js';
 import { AuthorizationError } from './errors.js';
 
+function assertApiKeyWorkspaceScope(auth: AuthContext, workspaceId: string): void {
+  if (auth.authMethod !== 'api_key') {
+    return;
+  }
+  if (auth.projectAccessBypass || auth.user.envAdmin) {
+    return;
+  }
+  if (auth.apiKeyWorkspaceId && auth.apiKeyWorkspaceId !== workspaceId) {
+    throw new AuthorizationError('API key is scoped to a different workspace.');
+  }
+}
+
 export async function assertWorkspaceAccess(
   prisma: PrismaClient,
   auth: AuthContext,
   workspaceId: string,
   minRole: WorkspaceRole = 'MEMBER'
 ): Promise<{ role: WorkspaceRole }> {
+  assertApiKeyWorkspaceScope(auth, workspaceId);
   const membership = await requireWorkspaceMembership({
     prisma,
     auth,
@@ -44,6 +57,7 @@ export async function assertProjectAccess(
   projectId: string,
   minRole: 'OWNER' | 'MAINTAINER' | 'WRITER' | 'READER' = 'READER'
 ): Promise<void> {
+  assertApiKeyWorkspaceScope(auth, workspaceId);
   const membership = await requireProjectMembership({
     prisma,
     auth,

@@ -1,0 +1,350 @@
+[
+  {
+    "description": "Set active workspace key for this MCP session",
+    "inputSchema": {
+      "properties": {
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    },
+    "name": "set_workspace"
+  },
+  {
+    "description": "Manually choose and pin a project key (disables auto-switch until unpinned)",
+    "inputSchema": {
+      "properties": {
+        "key": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "type": "object"
+    },
+    "name": "set_project"
+  },
+  {
+    "description": "Disable pin mode and resume automatic project switching",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "unset_project_pin"
+  },
+  {
+    "description": "Show current resolved project and pin mode state",
+    "inputSchema": {
+      "properties": {},
+      "type": "object"
+    },
+    "name": "get_current_project"
+  },
+  {
+    "description": "Store memory in resolved workspace/project",
+    "inputSchema": {
+      "properties": {
+        "content": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object"
+        },
+        "type": {
+          "enum": [
+            "summary",
+            "activity",
+            "active_work",
+            "constraint",
+            "problem",
+            "goal",
+            "decision",
+            "note",
+            "caveat"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "content"
+      ],
+      "type": "object"
+    },
+    "name": "remember"
+  },
+  {
+    "description": "Query memories from resolved workspace/project",
+    "inputSchema": {
+      "properties": {
+        "limit": {
+          "type": "number"
+        },
+        "mode": {
+          "enum": [
+            "hybrid",
+            "keyword",
+            "semantic"
+          ],
+          "type": "string"
+        },
+        "project_key": {
+          "type": "string"
+        },
+        "q": {
+          "type": "string"
+        },
+        "since": {
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "summary",
+            "activity",
+            "active_work",
+            "constraint",
+            "problem",
+            "goal",
+            "decision",
+            "note",
+            "caveat"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "recall"
+  },
+  {
+    "description": "List projects in active workspace",
+    "inputSchema": {
+      "properties": {
+        "workspace_key": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "list_projects"
+  },
+  {
+    "description": "Fetch a standardized context bundle (snapshot + retrieval) for the current project",
+    "inputSchema": {
+      "properties": {
+        "budget": {
+          "type": "number"
+        },
+        "current_subpath": {
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "default",
+            "debug"
+          ],
+          "type": "string"
+        },
+        "project_key": {
+          "type": "string"
+        },
+        "q": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "context_bundle"
+  },
+  {
+    "description": "Search raw imported conversation snippets (never full transcript)",
+    "inputSchema": {
+      "properties": {
+        "limit": {
+          "type": "number"
+        },
+        "project_key": {
+          "type": "string"
+        },
+        "q": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "q"
+      ],
+      "type": "object"
+    },
+    "name": "search_raw"
+  },
+  {
+    "description": "Search Notion pages for external documentation context",
+    "inputSchema": {
+      "properties": {
+        "limit": {
+          "type": "number"
+        },
+        "q": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "q"
+      ],
+      "type": "object"
+    },
+    "name": "notion_search"
+  },
+  {
+    "description": "Read a Notion page content by page id or URL",
+    "inputSchema": {
+      "properties": {
+        "max_chars": {
+          "type": "number"
+        },
+        "page_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id"
+      ],
+      "type": "object"
+    },
+    "name": "notion_read"
+  },
+  {
+    "description": "Search then read concise Notion context snippets for the current workspace",
+    "inputSchema": {
+      "properties": {
+        "limit": {
+          "type": "number"
+        },
+        "max_chars": {
+          "type": "number"
+        },
+        "page_id": {
+          "type": "string"
+        },
+        "q": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "notion_context"
+  },
+  {
+    "description": "Search Jira issues for engineering context",
+    "inputSchema": {
+      "properties": {
+        "limit": {
+          "type": "number"
+        },
+        "q": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "q"
+      ],
+      "type": "object"
+    },
+    "name": "jira_search"
+  },
+  {
+    "description": "Read Jira issue details by key",
+    "inputSchema": {
+      "properties": {
+        "issue_key": {
+          "type": "string"
+        },
+        "max_chars": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "issue_key"
+      ],
+      "type": "object"
+    },
+    "name": "jira_read"
+  },
+  {
+    "description": "Search Confluence pages for team documentation context",
+    "inputSchema": {
+      "properties": {
+        "limit": {
+          "type": "number"
+        },
+        "q": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "q"
+      ],
+      "type": "object"
+    },
+    "name": "confluence_search"
+  },
+  {
+    "description": "Read Confluence page content by page id",
+    "inputSchema": {
+      "properties": {
+        "max_chars": {
+          "type": "number"
+        },
+        "page_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page_id"
+      ],
+      "type": "object"
+    },
+    "name": "confluence_read"
+  },
+  {
+    "description": "Search Linear issues for planning and execution context",
+    "inputSchema": {
+      "properties": {
+        "limit": {
+          "type": "number"
+        },
+        "q": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "q"
+      ],
+      "type": "object"
+    },
+    "name": "linear_search"
+  },
+  {
+    "description": "Read Linear issue details by issue key",
+    "inputSchema": {
+      "properties": {
+        "issue_key": {
+          "type": "string"
+        },
+        "max_chars": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "issue_key"
+      ],
+      "type": "object"
+    },
+    "name": "linear_read"
+  }
+]

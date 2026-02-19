@@ -329,4 +329,23 @@ export function registerCoreSettingsOidcOutboundRoutes(
       next(error);
     }
   });
+
+  app.get('/v1/outbound/template-variables', async (req, res, next) => {
+    try {
+      const query = z
+        .object({
+          workspace_key: z.string().min(1),
+          integration_type: outboundIntegrationTypeSchema.default('slack'),
+        })
+        .parse(req.query);
+      const result = await service.listOutboundTemplateVariables({
+        auth: (req as AuthedRequest).auth!,
+        workspaceKey: query.workspace_key,
+        integrationType: query.integration_type,
+      });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  });
 }

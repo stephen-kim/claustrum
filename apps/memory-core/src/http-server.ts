@@ -21,6 +21,8 @@ import { ConfluenceClientAdapter } from './integrations/confluence-client.js';
 import { LinearClientAdapter } from './integrations/linear-client.js';
 import { SlackAuditNotifier } from './integrations/audit-slack-notifier.js';
 import { AuditReasoner } from './integrations/audit-reasoner.js';
+import { LlmClient } from './integrations/llm-client.js';
+import { recordLlmUsageEvent } from './service/helpers/llm-usage-helpers.js';
 import { toLockedIntegrationProviders } from './http/locked-integration-providers.js';
 import { registerV1Routes } from './http/routes/register-v1-routes.js';
 import type { AuthedRequest } from './http/types.js';
@@ -66,7 +68,13 @@ const auditSlackNotifier = envIntegrationEnabled
       logger,
     })
   : undefined;
-const auditReasoner = new AuditReasoner(logger);
+const llmClient = new LlmClient(logger, async (event) => {
+  await recordLlmUsageEvent({
+    prisma,
+    usage: event,
+  });
+});
+const auditReasoner = new AuditReasoner(logger, llmClient);
 
 const service = new MemoryCoreService(
   prisma,
@@ -77,6 +85,7 @@ const service = new MemoryCoreService(
   linearClient,
   auditSlackNotifier,
   auditReasoner,
+  llmClient,
   toLockedIntegrationProviders(config.integrationLockedProviders),
   {
     enabled: envIntegrationEnabled ? config.auditReasonerEnabled : false,

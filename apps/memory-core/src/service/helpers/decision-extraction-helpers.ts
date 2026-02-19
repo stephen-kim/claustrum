@@ -1,5 +1,6 @@
 import { Prisma, RawEventType, type PrismaClient } from '@prisma/client';
 import type { AuditReasonerConfig } from '../../integrations/audit-reasoner.js';
+import type { LlmClient } from '../../integrations/llm-client.js';
 import { toJsonObject } from '../integration-utils.js';
 import { getEffectiveWorkspaceSettings } from '../workspace-resolution.js';
 import {
@@ -16,6 +17,7 @@ type DecisionBatchArgs = {
   prisma: PrismaClient;
   workspaceId: string;
   actorUserId: string;
+  llmClient: LlmClient;
   updateMemoryEmbedding: (memoryId: string, content: string) => Promise<void>;
   getDecisionLlmConfig: (workspaceId: string) => Promise<AuditReasonerConfig | undefined>;
 };
@@ -101,6 +103,7 @@ export async function runDecisionExtractionBatchForWorkspace(args: DecisionBatch
         actorUserId: args.actorUserId,
         settings,
         llmConfig,
+        llmClient: args.llmClient,
         updateMemoryEmbedding: args.updateMemoryEmbedding,
       });
     } catch (error) {
@@ -205,14 +208,19 @@ async function processEventWithLlm(args: {
   actorUserId: string;
   settings: Awaited<ReturnType<typeof getEffectiveWorkspaceSettings>>;
   llmConfig: AuditReasonerConfig;
+  llmClient: LlmClient;
   updateMemoryEmbedding: (memoryId: string, content: string) => Promise<void>;
 }): Promise<void> {
   const metadata = toJsonObject(args.event.metadata);
   const changedFiles = toStringArray(args.event.changedFiles);
   const classification = await classifyDecisionFromRawEvent({
     config: args.llmConfig,
+    llmClient: args.llmClient,
     event: {
       id: args.event.id,
+      workspaceId: args.event.workspaceId,
+      projectId: args.event.projectId,
+      actorUserId: args.actorUserId,
       eventType: args.event.eventType,
       commitSha: args.event.commitSha,
       commitMessage: args.event.commitMessage,

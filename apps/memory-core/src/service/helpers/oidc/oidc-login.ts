@@ -1,4 +1,3 @@
-import { createHash, randomBytes } from 'node:crypto';
 import { OidcSyncMode, ProjectRole, WorkspaceRole } from '@prisma/client';
 import { issueSessionToken } from '../../../security/session-token.js';
 import { issueOidcStateToken, verifyOidcStateToken } from '../../../security/oidc-state-token.js';
@@ -18,29 +17,12 @@ import {
   toWorkspaceRole,
   type OidcBaseDeps,
 } from './oidc-types.js';
-
-function pkceCodeVerifier(): string {
-  return randomBytes(48).toString('base64url');
-}
-
-function pkceCodeChallenge(verifier: string): string {
-  return createHash('sha256').update(verifier).digest('base64url');
-}
-
-function nonceValue(): string {
-  return randomBytes(24).toString('base64url');
-}
-function resolveRedirectUri(args: {
-  workspaceKey: string;
-  requestBaseUrl?: string;
-  configuredBaseUrl?: string;
-}): string {
-  const baseUrl = (args.configuredBaseUrl || args.requestBaseUrl || '').trim().replace(/\/+$/, '');
-  if (!baseUrl) {
-    throw new ValidationError('public base URL is required to start OIDC login');
-  }
-  return `${baseUrl}/v1/auth/oidc/${encodeURIComponent(args.workspaceKey)}/callback`;
-}
+import {
+  nonceValue,
+  pkceCodeChallenge,
+  pkceCodeVerifier,
+  resolveRedirectUri,
+} from './oidc-login-utils.js';
 
 export async function startOidcLoginHandler(
   deps: OidcBaseDeps,

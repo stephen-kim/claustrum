@@ -9,11 +9,17 @@ export function registerApiKeysRoutes(app: express.Express, service: MemoryCoreS
       const body = z
         .object({
           label: z.string().max(120).optional(),
+          workspace_key: z.string().min(1).optional(),
+          device_label: z.string().min(1).max(120),
+          expires_at: z.string().datetime().optional(),
         })
         .parse(req.body);
       const result = await service.createSelfApiKey({
         auth: (req as AuthedRequest).auth!,
         label: body.label,
+        workspaceKey: body.workspace_key,
+        deviceLabel: body.device_label,
+        expiresAt: body.expires_at,
         ip: req.ip,
       });
       res.status(201).json(result);
@@ -63,10 +69,20 @@ export function registerApiKeysRoutes(app: express.Express, service: MemoryCoreS
   app.post('/v1/users/:userId/api-keys/reset', async (req, res, next) => {
     try {
       const params = z.object({ userId: z.string().min(1) }).parse(req.params);
+      const body = z
+        .object({
+          workspace_key: z.string().min(1).optional(),
+          device_label: z.string().min(1).max(120),
+          expires_at: z.string().datetime().optional(),
+        })
+        .parse(req.body ?? {});
       const requestBaseUrl = `${req.protocol}://${req.get('host') || ''}`;
       const result = await service.resetUserApiKeys({
         auth: (req as AuthedRequest).auth!,
         userId: params.userId,
+        workspaceKey: body.workspace_key,
+        deviceLabel: body.device_label,
+        expiresAt: body.expires_at,
         requestBaseUrl,
         ip: req.ip,
       });

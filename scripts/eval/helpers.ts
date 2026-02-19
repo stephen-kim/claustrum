@@ -86,10 +86,10 @@ export function parseArgs(argv: string[]): Record<string, string> {
 
 export function defaultQuestionsPath(cwd: string): string {
   const yamlPath = path.join(cwd, 'eval', 'questions.yaml');
-  if (fs.existsSync(yamlPath)) {
-    return yamlPath;
+  if (!fs.existsSync(yamlPath)) {
+    throw new Error(`Questions file not found: ${yamlPath}`);
   }
-  return path.join(cwd, 'eval', 'questions.yml');
+  return yamlPath;
 }
 
 export function loadQuestionsConfig(filePath: string): EvalConfig {

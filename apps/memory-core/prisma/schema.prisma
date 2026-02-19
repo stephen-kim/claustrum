@@ -317,6 +317,7 @@ model Workspace {
   githubTeamMembersCache GithubTeamMembersCache[]
   githubWebhookEvents GithubWebhookEvent[]
   githubTeamMappings GithubTeamMapping[]
+  apiKeys           ApiKey[]
   monorepoSubprojectPolicies MonorepoSubprojectPolicy[]
   globalRules       GlobalRule[]        @relation("WorkspaceGlobalRules")
   globalRuleSummaries GlobalRuleSummary[] @relation("WorkspaceGlobalRuleSummaries")
@@ -326,6 +327,7 @@ model Workspace {
   auditDeliveries   AuditDeliveryQueue[]
   detectionRules    DetectionRule[]
   detections        Detection[]
+  llmUsageEvents    LlmUsageEvent[]
 
   @@map("workspaces")
 }
@@ -365,6 +367,7 @@ model User {
   globalRules       GlobalRule[]        @relation("UserGlobalRules")
   globalRuleSummaries GlobalRuleSummary[] @relation("UserGlobalRuleSummaries")
   settings          UserSetting?
+  llmUsageEvents    LlmUsageEvent[]
 
   @@map("users")
 }
@@ -402,6 +405,7 @@ model Project {
   githubRepoLinks GithubRepoLink[]
   activeWork  ActiveWork[]
   activeWorkEvents ActiveWorkEvent[]
+  llmUsageEvents LlmUsageEvent[]
 
   @@unique([workspaceId, key])
   @@index([workspaceId, key])
@@ -681,18 +685,25 @@ model ProjectMapping {
 model ApiKey {
   id              String               @id @default(cuid())
   key             String?              @unique
+  workspaceId     String               @map("workspace_id")
   keyHash         String               @unique @map("key_hash")
+  keyPrefix       String               @map("key_prefix")
+  deviceLabel     String               @map("device_label")
+  expiresAt       DateTime?            @map("expires_at")
   label           String?
   userId          String               @map("user_id")
   createdByUserId String?              @map("created_by_user_id")
   lastUsedAt      DateTime?            @map("last_used_at")
   createdAt       DateTime             @default(now()) @map("created_at")
   revokedAt       DateTime?            @map("revoked_at")
+  workspace       Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user            User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdByUser   User?                @relation("ApiKeyCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   oneTimeTokens   ApiKeyOneTimeToken[]
 
   @@index([userId])
+  @@index([workspaceId])
+  @@index([workspaceId, userId])
   @@index([createdByUserId])
   @@map("api_keys")
 }
@@ -928,6 +939,46 @@ model Detection {
   @@index([ruleId, status, triggeredAt(sort: Desc)])
   @@index([workspaceId, correlationId])
   @@map("detections")
+}
+
+model LlmPricing {
+  id                        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  provider                  String
+  model                     String
+  inputTokenPricePer1kCents Float    @map("input_token_price_per_1k_cents")
+  outputTokenPricePer1kCents Float   @map("output_token_price_per_1k_cents")
+  isActive                  Boolean  @default(true) @map("is_active")
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  @@unique([provider, model])
+  @@index([provider, isActive])
+  @@map("llm_pricing")
+}
+
+model LlmUsageEvent {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId        String    @map("workspace_id")
+  projectId          String?   @map("project_id")
+  actorUserId        String?   @map("actor_user_id")
+  systemActor        String?   @map("system_actor")
+  purpose            String
+  provider           String
+  model              String
+  inputTokens        Int?      @map("input_tokens")
+  outputTokens       Int?      @map("output_tokens")
+  estimatedCostCents Float?    @map("estimated_cost_cents")
+  correlationId      String?   @map("correlation_id")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  workspace          Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project            Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  actorUser          User?     @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([workspaceId, purpose, createdAt(sort: Desc)])
+  @@index([workspaceId, provider, model, createdAt(sort: Desc)])
+  @@index([workspaceId, correlationId])
+  @@map("llm_usage_events")
 }
 
 model WorkspaceIntegration {

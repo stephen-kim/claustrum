@@ -44,6 +44,33 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: MCP tool schema snapshot guard
+        id: schema_snapshot
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          mkdir -p eval/runs/pr-head
+          LOG_PATH="eval/runs/pr-head/schema-snapshot.log"
+          if node --import tsx --test apps/mcp-adapter/src/tools-schema.snapshot.test.ts >"${LOG_PATH}" 2>&1; then
+            STATUS="success"
+            EXIT_CODE=0
+          else
+            STATUS="failure"
+            EXIT_CODE=$?
+          fi
+          export STATUS EXIT_CODE
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const status = process.env.STATUS || 'failure';
+          const exitCode = Number(process.env.EXIT_CODE || '1');
+          const payload = {
+            status,
+            exit_code: exitCode,
+            checked_at: new Date().toISOString(),
+          };
+          fs.writeFileSync('eval/runs/pr-head/schema-snapshot.json', `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+          NODE
+
       - name: Prepare CI env file
         run: |
           cp .env.example .env
@@ -120,6 +147,8 @@ jobs:
           fi
 
       - name: Build sticky comment body
+        env:
+          SCHEMA_SNAPSHOT_OUTCOME: ${{ steps.schema_snapshot.outcome }}
         run: |
           node - <<'NODE'
           const fs = require('node:fs');
@@ -137,6 +166,21 @@ jobs:
           const totalScore = cases.reduce((sum, c) => sum + (Number(c.score) || 0), 0);
           const maxScore = totalCases * 100;
           const topFailures = [...failed].sort((a, b) => (a.score || 0) - (b.score || 0)).slice(0, 5);
+          const schemaSnapshotPath = path.join(runDir, 'schema-snapshot.json');
+          const schemaSnapshotLogPath = path.join(runDir, 'schema-snapshot.log');
+          const schemaSnapshot = fs.existsSync(schemaSnapshotPath)
+            ? JSON.parse(fs.readFileSync(schemaSnapshotPath, 'utf8'))
+            : { status: process.env.SCHEMA_SNAPSHOT_OUTCOME || 'unknown', exit_code: -1 };
+          const schemaPass = schemaSnapshot.status === 'success';
+          const schemaBadge = schemaPass ? '✅ PASS' : '❌ FAIL';
+          const schemaLogTail = fs.existsSync(schemaSnapshotLogPath)
+            ? fs
+                .readFileSync(schemaSnapshotLogPath, 'utf8')
+                .trim()
+                .split('\n')
+                .slice(-8)
+                .join('\n')
+            : 'log not found';
 
           let diffSummary = '- Diff not available (base eval missing).';
           const diffPath = path.join(runDir, 'diff.json');
@@ -153,6 +197,15 @@ jobs:
           lines.push('');
           lines.push(`- Total score: **${totalScore.toFixed(2)} / ${maxScore}**`);
           lines.push(`- Failing cases: **${failed.length} / ${totalCases}**`);
+          lines.push('');
+          lines.push('### MCP Tool Schema Snapshot');
+          lines.push(`- Status: **${schemaBadge}** (exit=${schemaSnapshot.exit_code ?? 'n/a'})`);
+          if (!schemaPass) {
+            lines.push('');
+            lines.push('```text');
+            lines.push(schemaLogTail || 'no log output');
+            lines.push('```');
+          }
           lines.push('');
           lines.push('### Top failures');
           if (topFailures.length === 0) {
@@ -187,6 +240,19 @@ jobs:
           lines.push('');
 
           fs.writeFileSync(path.join(runDir, 'pr-comment.md'), `${lines.join('\n')}\n`, 'utf8');
+
+          const reportPath = path.join(runDir, 'report.md');
+          if (fs.existsSync(reportPath)) {
+            const reportExtra = [
+              '',
+              '## MCP Tool Schema Snapshot',
+              '',
+              `- Status: **${schemaBadge}**`,
+              `- Exit code: \`${schemaSnapshot.exit_code ?? 'n/a'}\``,
+              '',
+            ].join('\n');
+            fs.appendFileSync(reportPath, reportExtra, 'utf8');
+          }
           NODE
 
       - name: Update sticky PR comment
@@ -204,6 +270,13 @@ jobs:
             eval/runs/pr-head/**
             eval/runs/pr-base/**
           if-no-files-found: warn
+
+      - name: Fail workflow on schema snapshot drift
+        if: steps.schema_snapshot.outcome != 'success'
+        run: |
+          echo "MCP tool schema snapshot guard failed."
+          echo "See eval/runs/pr-head/schema-snapshot.log in uploaded artifacts."
+          exit 1
 
       - name: Cleanup containers/worktree
         if: always()

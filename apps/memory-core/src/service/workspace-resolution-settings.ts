@@ -25,48 +25,54 @@ import {
   defaultGlobalRulesRoutingTopK,
   defaultGlobalRulesSummaryMinCount,
   defaultGlobalRulesWarnThreshold,
-  defaultOutboundLocales,
-  defaultPersonaWeights,
-  defaultMonorepoExcludeGlobs,
-  defaultMonorepoRootMarkers,
   defaultMonorepoSubpathBoostWeight,
-  defaultSearchTypeWeights,
-  defaultMonorepoWorkspaceGlobs,
-  monorepoContextModeSchema,
-  monorepoModeSchema,
-  resolutionOrderSchema,
   type ResolveProjectInput,
 } from '@claustrum/shared';
+import {
+  DEFAULT_GITHUB_PERMISSION_SYNC_MODE,
+  DEFAULT_GITHUB_PREFIX,
+  DEFAULT_GITHUB_ROLE_MAPPING,
+  DEFAULT_GITHUB_WEBHOOK_SYNC_MODE,
+  DEFAULT_LOCAL_PREFIX,
+  DEFAULT_MONOREPO_CONTEXT_MODE,
+  DEFAULT_MONOREPO_DETECTION_LEVEL,
+  DEFAULT_MONOREPO_EXCLUDE_GLOBS,
+  DEFAULT_MONOREPO_GLOBS,
+  DEFAULT_MONOREPO_MAX_DEPTH,
+  DEFAULT_MONOREPO_MODE,
+  DEFAULT_MONOREPO_ROOT_MARKERS,
+  DEFAULT_OUTBOUND_LOCALE,
+  DEFAULT_RESOLUTION_ORDER,
+  DEFAULT_RETENTION_MODE,
+  DEFAULT_SEARCH_MODE,
+  DEFAULT_SEARCH_TYPE_WEIGHTS,
+  DEFAULT_PERSONA_WEIGHTS,
+  DEFAULT_SUPPORTED_OUTBOUND_LOCALES,
+  DEFAULT_AUTO_EXTRACT_MODE,
+  clampFloat,
+  parseDetectionLevel,
+  parseGithubCacheTtlSeconds,
+  parseGithubPermissionSyncMode,
+  parseGithubRoleMapping,
+  parseGlobalRulesRoutingMode,
+  parseGlobalRulesSelectionMode,
+  parseMonorepoContextMode,
+  parseMonorepoMode,
+  parseNonNegativeInt,
+  parseOutboundLocale,
+  parseOutboundLocaleArray,
+  parsePersonaWeights,
+  parsePositiveInt,
+  parseProjectRole,
+  parseResolutionOrder,
+  parseRetentionMode,
+  parseSearchTypeWeights,
+  parseSecuritySeverity,
+  parseStringArray,
+} from './workspace-resolution-parsers.js';
 
-export const DEFAULT_RESOLUTION_ORDER: ResolutionKind[] = [
-  ResolutionKind.github_remote,
-  ResolutionKind.repo_root_slug,
-  ResolutionKind.manual,
-];
-
-const DEFAULT_GITHUB_PREFIX = 'github:';
-const DEFAULT_LOCAL_PREFIX = 'local:';
-const DEFAULT_GITHUB_PERMISSION_SYNC_MODE: 'add_only' | 'add_and_remove' = 'add_only';
-const DEFAULT_GITHUB_WEBHOOK_SYNC_MODE: 'add_only' | 'add_and_remove' = 'add_only';
-const DEFAULT_GITHUB_ROLE_MAPPING: Record<string, 'owner' | 'maintainer' | 'writer' | 'reader'> = {
-  admin: 'maintainer',
-  maintain: 'maintainer',
-  write: 'writer',
-  triage: 'reader',
-  read: 'reader',
-};
-const DEFAULT_MONOREPO_MODE = MonorepoMode.repo_hash_subpath;
-const DEFAULT_MONOREPO_CONTEXT_MODE = MonorepoContextMode.shared_repo;
-const DEFAULT_MONOREPO_DETECTION_LEVEL = 2;
-export const DEFAULT_MONOREPO_MAX_DEPTH = 3;
-const DEFAULT_MONOREPO_ROOT_MARKERS = [...defaultMonorepoRootMarkers];
-export const DEFAULT_MONOREPO_GLOBS = [...defaultMonorepoWorkspaceGlobs];
-const DEFAULT_MONOREPO_EXCLUDE_GLOBS = [...defaultMonorepoExcludeGlobs];
-const DEFAULT_AUTO_EXTRACT_MODE = AutoExtractionMode.draft_only;
-const DEFAULT_SEARCH_MODE = SearchDefaultMode.hybrid;
-const DEFAULT_OUTBOUND_LOCALE = 'en';
-const DEFAULT_SUPPORTED_OUTBOUND_LOCALES = [...defaultOutboundLocales];
-const DEFAULT_RETENTION_MODE: 'archive' | 'hard_delete' = 'archive';
+export { DEFAULT_MONOREPO_GLOBS, DEFAULT_MONOREPO_MAX_DEPTH, DEFAULT_RESOLUTION_ORDER };
+export { parseResolutionOrder };
 
 export type EffectiveWorkspaceSettings = {
   resolutionOrder: ResolutionKind[];
@@ -158,239 +164,6 @@ export type EffectiveWorkspaceSettings = {
   oidcAllowAutoProvision: boolean;
 };
 
-export function parseResolutionOrder(input: unknown): ResolutionKind[] {
-  const parsed = resolutionOrderSchema.safeParse(input);
-  if (!parsed.success) {
-    return DEFAULT_RESOLUTION_ORDER;
-  }
-  return parsed.data as ResolutionKind[];
-}
-
-export function parseMonorepoMode(input: unknown): MonorepoMode {
-  const parsed = monorepoModeSchema.safeParse(input);
-  if (!parsed.success) {
-    return DEFAULT_MONOREPO_MODE;
-  }
-  return parsed.data as MonorepoMode;
-}
-
-export function parseMonorepoContextMode(input: unknown): MonorepoContextMode {
-  const parsed = monorepoContextModeSchema.safeParse(input);
-  if (!parsed.success) {
-    return DEFAULT_MONOREPO_CONTEXT_MODE;
-  }
-  return parsed.data as MonorepoContextMode;
-}
-
-function parseStringArray(input: unknown, fallback: string[]): string[] {
-  if (!Array.isArray(input)) {
-    return fallback;
-  }
-  const values = input
-    .map((item) => String(item || '').trim())
-    .filter((item) => item.length > 0);
-  return values.length > 0 ? values : fallback;
-}
-
-function parsePositiveInt(input: unknown, fallback: number): number {
-  const value =
-    typeof input === 'number'
-      ? input
-      : typeof input === 'string' && input.trim()
-        ? Number(input)
-        : Number.NaN;
-  if (!Number.isInteger(value) || value <= 0) {
-    return fallback;
-  }
-  return value;
-}
-
-function parseNonNegativeInt(input: unknown, fallback: number): number {
-  const value =
-    typeof input === 'number'
-      ? input
-      : typeof input === 'string' && input.trim()
-        ? Number(input)
-        : Number.NaN;
-  if (!Number.isInteger(value) || value < 0) {
-    return fallback;
-  }
-  return value;
-}
-
-function clampFloat(value: number, fallback: number, min: number, max: number): number {
-  if (!Number.isFinite(value)) {
-    return fallback;
-  }
-  return Math.min(Math.max(value, min), max);
-}
-
-function parseDetectionLevel(input: unknown, fallback: number): number {
-  const value =
-    typeof input === 'number'
-      ? input
-      : typeof input === 'string' && input.trim()
-        ? Number(input)
-        : Number.NaN;
-  if (!Number.isInteger(value)) {
-    return fallback;
-  }
-  if (value < 0) {
-    return 0;
-  }
-  if (value > 3) {
-    return 3;
-  }
-  return value;
-}
-
-function parseGithubCacheTtlSeconds(input: unknown, fallback: number): number {
-  const value = parsePositiveInt(input, fallback);
-  if (value < 30) {
-    return 30;
-  }
-  if (value > 86400) {
-    return 86400;
-  }
-  return value;
-}
-
-function parseOutboundLocale(input: unknown, fallback: string): string {
-  const value = typeof input === 'string' ? input.trim().toLowerCase() : '';
-  if (!value) {
-    return fallback;
-  }
-  return DEFAULT_SUPPORTED_OUTBOUND_LOCALES.includes(value as (typeof defaultOutboundLocales)[number])
-    ? value
-    : fallback;
-}
-
-function parseOutboundLocaleArray(input: unknown, fallback: string[]): string[] {
-  const values = parseStringArray(input, fallback)
-    .map((value) => value.trim().toLowerCase())
-    .filter((value) =>
-      DEFAULT_SUPPORTED_OUTBOUND_LOCALES.includes(value as (typeof defaultOutboundLocales)[number])
-    );
-  if (values.length === 0) {
-    return fallback;
-  }
-  return Array.from(new Set(values));
-}
-
-function parseGithubPermissionSyncMode(input: unknown): 'add_only' | 'add_and_remove' {
-  if (input === 'add_and_remove') {
-    return 'add_and_remove';
-  }
-  return 'add_only';
-}
-
-function parseRetentionMode(input: unknown): 'archive' | 'hard_delete' {
-  if (input === 'hard_delete') {
-    return 'hard_delete';
-  }
-  return 'archive';
-}
-
-function parseSecuritySeverity(input: unknown): 'low' | 'medium' | 'high' {
-  if (input === 'low' || input === 'high') {
-    return input;
-  }
-  return 'medium';
-}
-
-function parseGlobalRulesSelectionMode(input: unknown): 'score' | 'recent' | 'priority_only' {
-  if (input === 'recent' || input === 'priority_only') {
-    return input;
-  }
-  return 'score';
-}
-
-function parseGlobalRulesRoutingMode(input: unknown): 'semantic' | 'keyword' | 'hybrid' {
-  if (input === 'semantic' || input === 'keyword') {
-    return input;
-  }
-  return 'hybrid';
-}
-
-function parseGithubRoleMapping(
-  input: unknown
-): Record<string, 'owner' | 'maintainer' | 'writer' | 'reader'> {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    return { ...DEFAULT_GITHUB_ROLE_MAPPING };
-  }
-  const out: Record<string, 'owner' | 'maintainer' | 'writer' | 'reader'> = {};
-  for (const [rawKey, rawValue] of Object.entries(input as Record<string, unknown>)) {
-    const key = String(rawKey || '').trim().toLowerCase();
-    if (!key) {
-      continue;
-    }
-    const value = String(rawValue || '').trim().toLowerCase();
-    if (value === 'owner' || value === 'maintainer' || value === 'writer' || value === 'reader') {
-      out[key] = value;
-    }
-  }
-  return Object.keys(out).length > 0 ? out : { ...DEFAULT_GITHUB_ROLE_MAPPING };
-}
-
-function parseSearchTypeWeights(input: unknown): Record<string, number> {
-  const base = { ...defaultSearchTypeWeights } as Record<string, number>;
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    return base;
-  }
-  const parsed: Record<string, number> = { ...base };
-  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-    const normalizedKey = String(key || '').trim().toLowerCase();
-    const numeric = Number(value);
-    if (!normalizedKey || !Number.isFinite(numeric) || numeric <= 0) {
-      continue;
-    }
-    parsed[normalizedKey] = Math.min(numeric, 100);
-  }
-  return parsed;
-}
-
-function parsePersonaWeights(input: unknown): Record<string, Record<string, number>> {
-  const fallback = Object.fromEntries(
-    Object.entries(defaultPersonaWeights).map(([persona, weights]) => [persona, { ...weights }])
-  ) as Record<string, Record<string, number>>;
-
-  if (!input || typeof input !== 'object' || Array.isArray(input)) {
-    return fallback;
-  }
-
-  const parsed: Record<string, Record<string, number>> = {};
-  for (const [personaKey, rawWeights] of Object.entries(input as Record<string, unknown>)) {
-    if (!rawWeights || typeof rawWeights !== 'object' || Array.isArray(rawWeights)) {
-      continue;
-    }
-    const persona = String(personaKey || '').trim().toLowerCase();
-    if (!persona) {
-      continue;
-    }
-    const weightMap: Record<string, number> = {};
-    for (const [rawType, rawValue] of Object.entries(rawWeights as Record<string, unknown>)) {
-      const type = String(rawType || '').trim().toLowerCase();
-      const numeric = Number(rawValue);
-      if (!type || !Number.isFinite(numeric) || numeric <= 0) {
-        continue;
-      }
-      weightMap[type] = Math.min(numeric, 100);
-    }
-    parsed[persona] = {
-      ...(fallback[persona] || {}),
-      ...weightMap,
-    };
-  }
-
-  for (const [persona, weights] of Object.entries(fallback)) {
-    if (!parsed[persona]) {
-      parsed[persona] = { ...weights };
-    }
-  }
-
-  return parsed;
-}
-
 export async function getEffectiveWorkspaceSettings(
   prisma: PrismaClient | Prisma.TransactionClient,
   workspaceId: string
@@ -431,7 +204,7 @@ export async function getEffectiveWorkspaceSettings(
       searchHybridAlpha: 0.6,
       searchHybridBeta: 0.4,
       searchDefaultLimit: 20,
-      searchTypeWeights: { ...defaultSearchTypeWeights },
+      searchTypeWeights: { ...DEFAULT_SEARCH_TYPE_WEIGHTS },
       searchRecencyHalfLifeDays: 14,
       searchSubpathBoostWeight: defaultMonorepoSubpathBoostWeight,
       bundleTokenBudgetTotal: defaultBundleTokenBudgetTotal,
@@ -448,7 +221,7 @@ export async function getEffectiveWorkspaceSettings(
       globalRulesRoutingMode: 'hybrid',
       globalRulesRoutingTopK: defaultGlobalRulesRoutingTopK,
       globalRulesRoutingMinScore: defaultGlobalRulesRoutingMinScore,
-      personaWeights: parsePersonaWeights(defaultPersonaWeights),
+      personaWeights: parsePersonaWeights(DEFAULT_PERSONA_WEIGHTS),
       githubProjectKeyPrefix: DEFAULT_GITHUB_PREFIX,
       githubKeyPrefix: DEFAULT_GITHUB_PREFIX,
       localKeyPrefix: DEFAULT_LOCAL_PREFIX,
@@ -667,14 +440,4 @@ export async function getEffectiveWorkspaceSettings(
     oidcSyncMode: settings.oidcSyncMode ?? OidcSyncMode.add_only,
     oidcAllowAutoProvision: settings.oidcAllowAutoProvision ?? true,
   };
-}
-
-function parseProjectRole(
-  input: unknown,
-  fallback: 'OWNER' | 'MAINTAINER' | 'WRITER' | 'READER'
-): 'OWNER' | 'MAINTAINER' | 'WRITER' | 'READER' {
-  if (input === 'OWNER' || input === 'MAINTAINER' || input === 'WRITER' || input === 'READER') {
-    return input;
-  }
-  return fallback;
 }

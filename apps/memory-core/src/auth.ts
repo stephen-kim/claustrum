@@ -9,6 +9,7 @@ export type AuthContext = {
   authMethod: 'session' | 'api_key' | 'env_admin';
   mustChangePassword: boolean;
   apiKeyId?: string;
+  apiKeyWorkspaceId?: string;
 };
 
 export async function authenticateBearerToken(args: {
@@ -80,33 +81,13 @@ export async function authenticateBearerToken(args: {
   });
 
   if (!apiKey) {
-    // Legacy fallback for plaintext keys before key_hash migration.
-    apiKey = await args.prisma.apiKey.findFirst({
-      where: {
-        key: token,
-        revokedAt: null,
-      },
-      include: {
-        user: true,
-      },
-    });
-    if (apiKey) {
-      void args.prisma.apiKey
-        .update({
-          where: { id: apiKey.id },
-          data: {
-            keyHash: hashed,
-          },
-        })
-        .catch(() => {});
-    }
-  }
-
-  if (!apiKey) {
     return null;
   }
 
   if (apiKey.revokedAt) {
+    return null;
+  }
+  if (apiKey.expiresAt && apiKey.expiresAt.getTime() <= Date.now()) {
     return null;
   }
 
@@ -132,6 +113,7 @@ export async function authenticateBearerToken(args: {
     authMethod: 'api_key',
     mustChangePassword: apiKey.user.mustChangePassword,
     apiKeyId: apiKey.id,
+    apiKeyWorkspaceId: apiKey.workspaceId,
   };
 }
 

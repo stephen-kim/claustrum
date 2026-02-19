@@ -13,7 +13,7 @@ export function hashOneTimeToken(value: string, secret: string): string {
 }
 
 export function generateApiKey(): string {
-  return `clst_${randomBytes(36).toString('base64url')}`;
+  return `clsk_live_${randomBytes(32).toString('hex')}`;
 }
 
 export function generateInvitationToken(): string {
@@ -25,4 +25,13 @@ export function maskApiKey(value: string): string {
     return value;
   }
   return `${value.slice(0, 6)}...${value.slice(-4)}`;
+}
+
+export function buildApiKeyPrefix(value: string): string {
+  if (!value) {
+    return 'unknown_****';
+  }
+  const first = value.slice(0, Math.min(10, value.length));
+  const last = value.slice(-4);
+  return `${first}****${last}`;
 }

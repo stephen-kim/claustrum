@@ -72,3 +72,5 @@ hf_space/
 !/scripts/qc/*.sh
 !/scripts/eval/
 !/scripts/eval/*.ts
+!/scripts/generate-openapi.mjs
+!/scripts/mcp-config-helper.js

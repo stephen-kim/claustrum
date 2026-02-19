@@ -37,11 +37,6 @@ Claustrum convierte eso en un sistema de memoria compartido y consultable para e
 Este README es intencionalmente breve. La configuración y operación detalladas se publican en GitHub Pages y se gestionan desde `docs/content`.
 
 - [Docs Site (GitHub Pages)](https://stephen-kim.github.io/claustrum/)
-- [Docs Source Home (EN)](docs/content/Home.md)
-- [Installation (EN)](docs/content/Installation.md)
-- [Operations (EN)](docs/content/Operations.md)
-- [Security and MCP I/O (EN)](docs/content/Security-and-MCP-IO.md)
-- [Architecture](docs/architecture.md)
 
 
 ## Estructura del Repositorio

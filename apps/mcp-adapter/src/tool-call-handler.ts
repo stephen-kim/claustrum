@@ -7,21 +7,15 @@ import {
   type MonorepoContextMode,
 } from './monorepo-context-mode.js';
 import type {
-  ConfluencePage,
-  ConfluenceReadResponse,
   ContextBundleResponse,
-  JiraIssue,
-  JiraIssueReadResponse,
-  LinearIssue,
-  LinearIssueReadResponse,
   MemoryRow,
-  NotionReadResponse,
-  NotionSearchPage,
   ProjectSummary,
   RawSearchMatch,
   ResolveResponse,
   WorkspaceSettingsResponse,
 } from './types.js';
+import { toolArgSchemas, type ToolSchemaName } from './tool-input-schemas.js';
+import { handleIntegrationToolCall } from './tool-call-integrations.js';
 
 type EnsureContextResult = {
   workspaceKey: string;
@@ -31,7 +25,7 @@ type EnsureContextResult = {
   pinMode: boolean;
 };
 
-type TextResult = { content: Array<{ type: 'text'; text: string }> };
+export type TextResult = { content: Array<{ type: 'text'; text: string }> };
 
 export type ToolHandlerDeps = {
   defaultWorkspaceKey: string;
@@ -65,7 +59,12 @@ export async function handleToolCall(
   deps: ToolHandlerDeps
 ): Promise<TextResult> {
   const toolName = request.params.name;
-  const args = (request.params.arguments || {}) as Record<string, unknown>;
+  const rawArgs = (request.params.arguments || {}) as Record<string, unknown>;
+  const parsedArgsResult = parseToolArgs(toolName, rawArgs);
+  if (!parsedArgsResult.ok) {
+    return deps.textResult(parsedArgsResult.message);
+  }
+  const args = parsedArgsResult.args;
 
   if (toolName === 'set_workspace') {
     const key = String(args.key || '').trim();
@@ -308,240 +307,39 @@ export async function handleToolCall(
     return deps.textResult(lines.length > 0 ? lines.join('\n') : 'No raw snippet matches');
   }
 
-  if (toolName === 'notion_search') {
-    const q = String(args.q || '').trim();
-    if (!q) {
-      return deps.textResult('q is required');
-    }
-    const workspaceKey = deps.getActiveWorkspaceKey() || deps.defaultWorkspaceKey;
-    const limit = typeof args.limit === 'number' ? Math.min(Math.max(args.limit, 1), 20) : 10;
-    const query = new URLSearchParams({
-      workspace_key: workspaceKey,
-      q,
-      limit: String(limit),
-    });
-    const response = await deps.requestJson<{ pages: NotionSearchPage[] }>(
-      `/v1/notion/search?${query.toString()}`,
-      { method: 'GET' }
-    );
-    const lines = response.pages.map((page) => {
-      return `${page.title}\n- ${page.url}\n- page_id: ${page.id}\n- edited: ${page.last_edited_time}`;
-    });
-    return deps.textResult(lines.length > 0 ? lines.join('\n\n') : 'No Notion pages found');
-  }
-
-  if (toolName === 'notion_read') {
-    const pageId = String(args.page_id || '').trim();
-    if (!pageId) {
-      return deps.textResult('page_id is required');
-    }
-    const workspaceKey = deps.getActiveWorkspaceKey() || deps.defaultWorkspaceKey;
-    const maxChars =
-      typeof args.max_chars === 'number' ? Math.min(Math.max(args.max_chars, 200), 20000) : 4000;
-    const query = new URLSearchParams({
-      workspace_key: workspaceKey,
-      page_id: pageId,
-      max_chars: String(maxChars),
-    });
-    const page = await deps.requestJson<NotionReadResponse>(`/v1/notion/read?${query.toString()}`, {
-      method: 'GET',
-    });
-    const text = `${page.title}\n${page.url}\n\n${page.content}`;
-    return deps.textResult(text);
-  }
-
-  if (toolName === 'notion_context') {
-    const pageId = String(args.page_id || '').trim();
-    const q = String(args.q || '').trim();
-    const workspaceKey = deps.getActiveWorkspaceKey() || deps.defaultWorkspaceKey;
-    const limit = typeof args.limit === 'number' ? Math.min(Math.max(args.limit, 1), 5) : 3;
-    const maxChars =
-      typeof args.max_chars === 'number' ? Math.min(Math.max(args.max_chars, 200), 4000) : 1200;
-
-    if (pageId) {
-      const query = new URLSearchParams({
-        workspace_key: workspaceKey,
-        page_id: pageId,
-        max_chars: String(maxChars),
-      });
-      const page = await deps.requestJson<NotionReadResponse>(`/v1/notion/read?${query.toString()}`, {
-        method: 'GET',
-      });
-      const text = `Context page (direct)\n${page.title}\n${page.url}\n\n${page.content}`;
-      return deps.textResult(text);
-    }
-
-    if (!q) {
-      return deps.textResult('q or page_id is required');
-    }
-
-    const searchQuery = new URLSearchParams({
-      workspace_key: workspaceKey,
-      q,
-      limit: String(limit),
-    });
-    const search = await deps.requestJson<{ pages: NotionSearchPage[] }>(
-      `/v1/notion/search?${searchQuery.toString()}`,
-      { method: 'GET' }
-    );
-
-    if (search.pages.length === 0) {
-      return deps.textResult('No Notion context pages found');
-    }
-
-    const sections: string[] = [];
-    for (const page of search.pages.slice(0, limit)) {
-      try {
-        const readQuery = new URLSearchParams({
-          workspace_key: workspaceKey,
-          page_id: page.id,
-          max_chars: String(maxChars),
-        });
-        const detail = await deps.requestJson<NotionReadResponse>(
-          `/v1/notion/read?${readQuery.toString()}`,
-          { method: 'GET' }
-        );
-        sections.push(`### ${detail.title}\n${detail.url}\n${detail.content}`);
-      } catch (error) {
-        sections.push(`### ${page.title}\n${page.url}\n(read failed: ${deps.toErrorMessage(error)})`);
-      }
-    }
-    return deps.textResult(sections.join('\n\n').slice(0, 20000));
-  }
-
-  if (toolName === 'jira_search') {
-    const q = String(args.q || '').trim();
-    if (!q) {
-      return deps.textResult('q is required');
-    }
-    const workspaceKey = deps.getActiveWorkspaceKey() || deps.defaultWorkspaceKey;
-    const limit = typeof args.limit === 'number' ? Math.min(Math.max(args.limit, 1), 20) : 10;
-    const query = new URLSearchParams({
-      workspace_key: workspaceKey,
-      q,
-      limit: String(limit),
-    });
-    const response = await deps.requestJson<{ issues: JiraIssue[] }>(`/v1/jira/search?${query.toString()}`, {
-      method: 'GET',
-    });
-    const lines = response.issues.map((issue) => {
-      const assignee = issue.assignee ? `, assignee=${issue.assignee}` : '';
-      return `${issue.key} [${issue.status}] ${issue.summary}\n- ${issue.url}\n- updated: ${issue.updated}${assignee}`;
-    });
-    return deps.textResult(lines.length > 0 ? lines.join('\n\n') : 'No Jira issues found');
-  }
-
-  if (toolName === 'jira_read') {
-    const issueKey = String(args.issue_key || '').trim();
-    if (!issueKey) {
-      return deps.textResult('issue_key is required');
-    }
-    const workspaceKey = deps.getActiveWorkspaceKey() || deps.defaultWorkspaceKey;
-    const maxChars =
-      typeof args.max_chars === 'number' ? Math.min(Math.max(args.max_chars, 200), 20000) : 4000;
-    const query = new URLSearchParams({
-      workspace_key: workspaceKey,
-      issue_key: issueKey,
-      max_chars: String(maxChars),
-    });
-    const issue = await deps.requestJson<JiraIssueReadResponse>(`/v1/jira/read?${query.toString()}`, {
-      method: 'GET',
-    });
-    return deps.textResult(
-      `${issue.key} [${issue.status}] ${issue.summary}\n${issue.url}\nupdated: ${issue.updated}\n\n${issue.content}`
-    );
-  }
-
-  if (toolName === 'confluence_search') {
-    const q = String(args.q || '').trim();
-    if (!q) {
-      return deps.textResult('q is required');
-    }
-    const workspaceKey = deps.getActiveWorkspaceKey() || deps.defaultWorkspaceKey;
-    const limit = typeof args.limit === 'number' ? Math.min(Math.max(args.limit, 1), 20) : 10;
-    const query = new URLSearchParams({
-      workspace_key: workspaceKey,
-      q,
-      limit: String(limit),
-    });
-    const response = await deps.requestJson<{ pages: ConfluencePage[] }>(
-      `/v1/confluence/search?${query.toString()}`,
-      { method: 'GET' }
-    );
-    const lines = response.pages.map((page) => {
-      const space = page.space ? `, space=${page.space}` : '';
-      return `${page.title}${space}\n- ${page.url}\n- page_id: ${page.id}\n- edited: ${page.last_edited_time}`;
-    });
-    return deps.textResult(lines.length > 0 ? lines.join('\n\n') : 'No Confluence pages found');
-  }
-
-  if (toolName === 'confluence_read') {
-    const pageId = String(args.page_id || '').trim();
-    if (!pageId) {
-      return deps.textResult('page_id is required');
-    }
-    const workspaceKey = deps.getActiveWorkspaceKey() || deps.defaultWorkspaceKey;
-    const maxChars =
-      typeof args.max_chars === 'number' ? Math.min(Math.max(args.max_chars, 200), 20000) : 4000;
-    const query = new URLSearchParams({
-      workspace_key: workspaceKey,
-      page_id: pageId,
-      max_chars: String(maxChars),
-    });
-    const page = await deps.requestJson<ConfluenceReadResponse>(
-      `/v1/confluence/read?${query.toString()}`,
-      { method: 'GET' }
-    );
-    return deps.textResult(`${page.title}\n${page.url}\n\n${page.content}`);
-  }
-
-  if (toolName === 'linear_search') {
-    const q = String(args.q || '').trim();
-    if (!q) {
-      return deps.textResult('q is required');
-    }
-    const workspaceKey = deps.getActiveWorkspaceKey() || deps.defaultWorkspaceKey;
-    const limit = typeof args.limit === 'number' ? Math.min(Math.max(args.limit, 1), 20) : 10;
-    const query = new URLSearchParams({
-      workspace_key: workspaceKey,
-      q,
-      limit: String(limit),
-    });
-    const response = await deps.requestJson<{ issues: LinearIssue[] }>(
-      `/v1/linear/search?${query.toString()}`,
-      { method: 'GET' }
-    );
-    const lines = response.issues.map((issue) => {
-      const assignee = issue.assignee ? `, assignee=${issue.assignee}` : '';
-      const project = issue.project ? `, project=${issue.project}` : '';
-      return `${issue.identifier} [${issue.state}] ${issue.title}\n- ${issue.url}\n- updated: ${issue.updatedAt}${project}${assignee}`;
-    });
-    return deps.textResult(lines.length > 0 ? lines.join('\n\n') : 'No Linear issues found');
-  }
-
-  if (toolName === 'linear_read') {
-    const issueKey = String(args.issue_key || '').trim();
-    if (!issueKey) {
-      return deps.textResult('issue_key is required');
-    }
-    const workspaceKey = deps.getActiveWorkspaceKey() || deps.defaultWorkspaceKey;
-    const maxChars =
-      typeof args.max_chars === 'number' ? Math.min(Math.max(args.max_chars, 200), 20000) : 4000;
-    const query = new URLSearchParams({
-      workspace_key: workspaceKey,
-      issue_key: issueKey,
-      max_chars: String(maxChars),
-    });
-    const issue = await deps.requestJson<LinearIssueReadResponse>(
-      `/v1/linear/read?${query.toString()}`,
-      { method: 'GET' }
-    );
-    return deps.textResult(
-      `${issue.identifier} [${issue.state}] ${issue.title}\n${issue.url}\nupdated: ${issue.updatedAt}\n\n${issue.content}`
-    );
+  const integrationResult = await handleIntegrationToolCall({
+    toolName,
+    toolArgs: args,
+    deps,
+  });
+  if (integrationResult) {
+    return integrationResult;
   }
 
   return deps.textResult(`Unknown tool: ${toolName}`);
+}
+
+function parseToolArgs(
+  toolName: string,
+  rawArgs: Record<string, unknown>
+): { ok: true; args: Record<string, unknown> } | { ok: false; message: string } {
+  const schema = toolArgSchemas[toolName as ToolSchemaName];
+  if (!schema) {
+    return { ok: true, args: rawArgs };
+  }
+
+  const parsed = schema.safeParse(rawArgs);
+  if (parsed.success) {
+    return { ok: true, args: parsed.data as Record<string, unknown> };
+  }
+
+  const details = parsed.error.issues
+    .map((issue: { path: Array<string | number>; message: string }) => {
+      const location = issue.path.length > 0 ? issue.path.join('.') : 'input';
+      return `${location}: ${issue.message}`;
+    })
+    .join('; ');
+  return { ok: false, message: `Invalid arguments for ${toolName}: ${details}` };
 }
 
 async function preloadContextBundle(args: {

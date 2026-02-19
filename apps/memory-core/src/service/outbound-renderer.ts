@@ -2,13 +2,12 @@ import {
   defaultOutboundLocales,
   defaultOutboundTemplates,
   outboundIntegrationTypeSchema,
-  outboundModeSchema,
   outboundStyleSchema,
   type OutboundIntegrationType,
   type OutboundLocale,
-  type OutboundMode,
   type OutboundStyle,
 } from '@claustrum/shared';
+import { Liquid } from 'liquidjs';
 
 type WorkspaceOutboundSettings = {
   defaultOutboundLocale?: string;
@@ -18,12 +17,47 @@ type WorkspaceOutboundSettings = {
 type OutboundPolicy = {
   localeDefault?: string;
   supportedLocales?: string[];
-  mode?: OutboundMode;
+  mode?: 'template' | 'llm';
   style?: OutboundStyle;
   templateOverrides?: Record<string, unknown>;
   llmPromptSystem?: string | null;
   llmPromptUser?: string | null;
 };
+
+const liquidEngine = new Liquid({
+  strictVariables: false,
+  strictFilters: false,
+});
+
+const TEMPLATE_VARIABLE_DESCRIPTIONS: Record<string, string> = {
+  q: 'Search query text.',
+  count: 'Number of matched items/results.',
+  message_id: 'Raw message identifier.',
+  summary: 'Short summary for event/decision.',
+  status: 'Status value such as success/failure/enabled/disabled.',
+  provider: 'Integration provider name.',
+  repository: 'Repository name or owner/repo.',
+  branch: 'Git branch name.',
+  integration_type: 'Integration type key (slack/jira/notion/etc).',
+  workspace_key: 'Workspace key.',
+  project_key: 'Project key.',
+  commit_sha: 'Git commit SHA.',
+  correlation_id: 'Batch/event correlation id.',
+};
+
+const COMMON_TEMPLATE_VARIABLES = [
+  'q',
+  'count',
+  'summary',
+  'status',
+  'provider',
+  'repository',
+  'branch',
+  'workspace_key',
+  'project_key',
+  'commit_sha',
+  'correlation_id',
+];
 
 function normalizeLocale(input: unknown): OutboundLocale | null {
   const value = typeof input === 'string' ? input.trim().toLowerCase() : '';
@@ -47,17 +81,34 @@ function normalizeLocaleList(input: unknown, fallback: OutboundLocale[]): Outbou
   return values.length > 0 ? values : fallback;
 }
 
-function applyTemplate(template: string, params: Record<string, unknown>): string {
-  return template.replace(/\{([a-zA-Z0-9_]+)\}/g, (_, key: string) => {
-    const value = params[key];
-    if (value === null || value === undefined) {
-      return '';
+function convertLegacyTemplateSyntax(template: string): string {
+  if (/\{\{|\{%/.test(template)) {
+    return template;
+  }
+  return template.replace(/\{([a-zA-Z0-9_]+)\}/g, '{{ $1 }}');
+}
+
+function renderLiquidTemplate(template: string, params: Record<string, unknown>): string {
+  const liquidTemplate = convertLegacyTemplateSyntax(template);
+  return liquidEngine.parseAndRenderSync(liquidTemplate, params);
+}
+
+function extractTemplateVariables(template: string): string[] {
+  const out = new Set<string>();
+
+  for (const match of template.matchAll(/\{\{\s*([a-zA-Z_][a-zA-Z0-9_\.]*)/g)) {
+    if (match[1]) {
+      out.add(match[1].trim());
     }
-    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-      return String(value);
+  }
+  if (!/\{\{|\{%/.test(template)) {
+    for (const match of template.matchAll(/\{([a-zA-Z0-9_]+)\}/g)) {
+      if (match[1]) {
+        out.add(match[1].trim());
+      }
     }
-    return JSON.stringify(value);
-  });
+  }
+  return Array.from(out).sort((a, b) => a.localeCompare(b));
 }
 
 function getTemplateFromOverrides(args: {
@@ -105,6 +156,96 @@ function summarizeParams(params: Record<string, unknown>): string {
     .join(', ');
 }
 
+export type OutboundTemplateVariable = {
+  name: string;
+  description: string;
+};
+
+export type OutboundTemplateVariablesCatalog = {
+  engine: 'liquid';
+  integration_type: OutboundIntegrationType;
+  common_variables: OutboundTemplateVariable[];
+  action_variables: Array<{
+    action_key: string;
+    variables: OutboundTemplateVariable[];
+  }>;
+};
+
+export function buildOutboundTemplateVariablesCatalog(args: {
+  integrationType: OutboundIntegrationType;
+  templateOverrides?: Record<string, unknown>;
+}): OutboundTemplateVariablesCatalog {
+  const localeTemplateSets = defaultOutboundLocales
+    .map((locale) => defaultOutboundTemplates[locale]?.[args.integrationType])
+    .filter((value): value is Record<string, string> => Boolean(value));
+  const actionKeys = new Set<string>();
+  for (const templates of localeTemplateSets) {
+    for (const key of Object.keys(templates)) {
+      actionKeys.add(key);
+    }
+  }
+  if (args.templateOverrides && typeof args.templateOverrides === 'object') {
+    for (const key of Object.keys(args.templateOverrides)) {
+      actionKeys.add(key);
+    }
+  }
+
+  const actionVariables: Array<{
+    action_key: string;
+    variables: OutboundTemplateVariable[];
+  }> = [];
+
+  for (const actionKey of Array.from(actionKeys).sort((a, b) => a.localeCompare(b))) {
+    const templates: string[] = [];
+    for (const locale of defaultOutboundLocales) {
+      const value = defaultOutboundTemplates[locale]?.[args.integrationType]?.[actionKey];
+      if (typeof value === 'string' && value.trim()) {
+        templates.push(value);
+      }
+    }
+
+    const overrideNode = args.templateOverrides?.[actionKey];
+    if (typeof overrideNode === 'string' && overrideNode.trim()) {
+      templates.push(overrideNode);
+    } else if (overrideNode && typeof overrideNode === 'object' && !Array.isArray(overrideNode)) {
+      for (const value of Object.values(overrideNode)) {
+        if (typeof value === 'string' && value.trim()) {
+          templates.push(value);
+        }
+      }
+    }
+
+    const names = new Set<string>();
+    for (const template of templates) {
+      for (const variableName of extractTemplateVariables(template)) {
+        names.add(variableName);
+      }
+    }
+
+    actionVariables.push({
+      action_key: actionKey,
+      variables: Array.from(names)
+        .sort((a, b) => a.localeCompare(b))
+        .map((name) => ({
+          name,
+          description:
+            TEMPLATE_VARIABLE_DESCRIPTIONS[name] ||
+            `Template param available at runtime as "${name}".`,
+        })),
+    });
+  }
+
+  return {
+    engine: 'liquid',
+    integration_type: args.integrationType,
+    common_variables: COMMON_TEMPLATE_VARIABLES.map((name) => ({
+      name,
+      description: TEMPLATE_VARIABLE_DESCRIPTIONS[name] || `Template param "${name}".`,
+    })),
+    action_variables: actionVariables,
+  };
+}
+
 export function resolveOutboundLocale(
   workspaceSettings: WorkspaceOutboundSettings,
   policy: OutboundPolicy | null | undefined,
@@ -136,14 +277,13 @@ export function renderOutboundMessage(args: {
   params?: Record<string, unknown>;
   locale: OutboundLocale;
   style: OutboundStyle;
-  mode: OutboundMode;
+  mode: 'template' | 'llm';
   templateOverrides?: Record<string, unknown>;
 }): string {
   const integrationParsed = outboundIntegrationTypeSchema.safeParse(args.integrationType);
   const integration = integrationParsed.success ? integrationParsed.data : 'slack';
   const locale = normalizeLocale(args.locale) || 'en';
   const style = outboundStyleSchema.safeParse(args.style).success ? args.style : 'short';
-  const mode = outboundModeSchema.safeParse(args.mode).success ? args.mode : 'template';
   const params = args.params || {};
 
   const overrideTemplate = getTemplateFromOverrides({
@@ -164,14 +304,26 @@ export function renderOutboundMessage(args: {
     englishTemplates?.['integration.update'] ||
     `${args.actionKey} event`;
 
-  let rendered = applyTemplate(baseTemplate, params).trim();
+  let rendered = '';
+  try {
+    rendered = renderLiquidTemplate(baseTemplate, params).trim();
+  } catch {
+    // Rendering should not break outbound flow; fallback keeps deterministic output.
+    rendered = convertLegacyTemplateSyntax(baseTemplate)
+      .replace(/\{\{\s*([a-zA-Z0-9_\.]+)\s*\}\}/g, (_, key: string) => {
+        const value = params[key];
+        if (value === null || value === undefined) {
+          return '';
+        }
+        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+          return String(value);
+        }
+        return JSON.stringify(value);
+      })
+      .trim();
+  }
   if (!rendered) {
     rendered = `${args.actionKey} event`;
-  }
-
-  if (mode === 'llm') {
-    // LLM mode is reserved for provider-backed generation. We keep deterministic fallback.
-    rendered = rendered;
   }
 
   if (style === 'short') {

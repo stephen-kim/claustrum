@@ -1,6 +1,6 @@
 import express from 'express';
 import { z } from 'zod';
-import { resolutionKindSchema } from '@claustrum/shared';
+import { createProjectMappingSchema, resolutionKindSchema, updateProjectMappingSchema } from '@claustrum/shared';
 import type { MemoryCoreService } from '../../service/index.js';
 import type { AuthedRequest } from '../types.js';
 
@@ -29,9 +29,10 @@ export function registerCoreSettingsMappingRoutes(
 
   app.post('/v1/project-mappings', async (req, res, next) => {
     try {
+      const input = createProjectMappingSchema.parse(req.body);
       const mapping = await service.createProjectMapping({
         auth: (req as AuthedRequest).auth!,
-        input: req.body,
+        input,
       });
       res.status(201).json(mapping);
     } catch (error) {
@@ -41,9 +42,10 @@ export function registerCoreSettingsMappingRoutes(
 
   app.patch('/v1/project-mappings', async (req, res, next) => {
     try {
+      const input = updateProjectMappingSchema.parse(req.body);
       const mapping = await service.updateProjectMapping({
         auth: (req as AuthedRequest).auth!,
-        input: req.body,
+        input,
       });
       res.json(mapping);
     } catch (error) {
