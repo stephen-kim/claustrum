@@ -48,7 +48,7 @@ For detailed permission math and cache behavior, see:
   "triage": "reader",
   "read": "reader"
 }
-```text
+```
 
 
 ## Operational Tips

@@ -6,7 +6,7 @@ Release Gate 会在发布前一次性跑完高风险 QC 检查。
 
 ```shell
 RELEASE_GATE_RESET_DB=true ./scripts/release-gate.sh
-```text
+```
 
 ## 关键环境变量
 

@@ -53,7 +53,7 @@ assignees: ''
 <!-- Your Claude Desktop config (remove sensitive paths) -->
 ```json
 
-```text
+```
 
 
 ## Additional Context

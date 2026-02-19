@@ -65,7 +65,7 @@ Claustrum CI는 모든 풀 요청과 `main`에 대한 모든 푸시에 대해 **
 
 ```shell
 RELEASE_GATE_RESET_DB=true ./scripts/release-gate.sh
-```text
+```
 ## 환경 관리
 
 CI는 `.env.example`에서 로컬 `.env` 파일을 작성한 다음 비밀이 아닌 CI 기본값을 추가합니다.

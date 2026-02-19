@@ -26,7 +26,7 @@ flowchart LR
   Git -->|/v1/git-events / /v1/ci-events| Core
   Import -->|/v1/imports*| Core
   Core --> DB
-```markdown
+```
 
 
 ## Data Model (Simplified ERD)

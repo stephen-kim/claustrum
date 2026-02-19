@@ -52,7 +52,7 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
       "write_on_merge": true
     }
   }'
-```markdown
+```
 4. API로 검증
 
 ```shell
@@ -69,7 +69,7 @@ curl -G "$MEMORY_CORE_URL/v1/notion/read" \
   --data-urlencode "workspace_key=personal" \
   --data-urlencode "page_id=<notion-page-id-or-url>" \
   --data-urlencode "max_chars=2000"
-```markdown
+```
 5. MCP 도구에서 유효성을 검사합니다.
 - `notion_search({ q, limit? })`
 - `notion_read({ page_id, max_chars? })`

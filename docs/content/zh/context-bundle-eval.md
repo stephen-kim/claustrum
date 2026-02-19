@@ -30,7 +30,7 @@
 
 ```shell
 pnpm eval:bundle
-```markdown
+```
 
 常用参数：
 
@@ -55,7 +55,7 @@ pnpm eval:bundle -- --mask true
 
 ```shell
 pnpm eval:diff -- --a eval/runs/<runA> --b eval/runs/<runB>
-```markdown
+```
 
 比较内容：
 - global rule IDs

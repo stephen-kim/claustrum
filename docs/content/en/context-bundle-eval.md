@@ -34,7 +34,7 @@ Run outputs:
 
 ```shell
 pnpm eval:bundle
-```markdown
+```
 
 Common options:
 
@@ -69,7 +69,7 @@ Outputs:
 
 ```shell
 pnpm eval:diff -- --a eval/runs/<runA> --b eval/runs/<runB>
-```markdown
+```
 
 Compared dimensions:
 - global rule selected IDs
@@ -120,7 +120,7 @@ Show latest report:
 
 ```shell
 pnpm eval:report
-```text
+```
 
 
 ## Security Notes

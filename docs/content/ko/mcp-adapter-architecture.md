@@ -15,7 +15,7 @@ Claustrum은 MCP 어댑터를 로컬에서 씬 프로세스로 실행하는 반�
     error.log
   state.json
   update.lock
-```text
+```
 ## 요청 경로
 
 1. MCP 클라이언트는 stdio를 통해 JSON-RPC를 보냅니다.

@@ -11,7 +11,7 @@ cp .env.example .env
 pnpm db:migrate
 pnpm db:seed
 pnpm dev
-```text
+```
 
 
 ## Before Opening a PR

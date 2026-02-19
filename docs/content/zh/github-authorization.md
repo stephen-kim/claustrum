@@ -18,7 +18,7 @@ Claustrum 的项目权限以 GitHub 为默认权威来源。
 
 ```text
 final_perm = max(direct_collaborator_perm, team_derived_perm)
-```markdown
+```
 
 优先级：
 

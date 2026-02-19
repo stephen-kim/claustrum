@@ -52,7 +52,7 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
       "api_url": "https://api.linear.app/graphql"
     }
   }'
-```markdown
+```
 4. API로 검증
 
 ```shell
@@ -69,7 +69,7 @@ curl -G "$MEMORY_CORE_URL/v1/linear/read" \
   --data-urlencode "workspace_key=personal" \
   --data-urlencode "issue_key=ENG-123" \
   --data-urlencode "max_chars=2000"
-```text
+```
 5. MCP 도구에서 유효성을 검사합니다.
 - `linear_search({ q, limit? })`
 - `linear_read({ issue_key, max_chars? })`

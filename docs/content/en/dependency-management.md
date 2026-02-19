@@ -40,7 +40,7 @@ If an npm lockfile appears accidentally, remove it and reinstall with pnpm.
 packages:
   - "apps/*"
   - "packages/*"
-```markdown
+```
 
 
 ## Root Commands
@@ -74,7 +74,7 @@ Use package filters when needed:
 ```shell
 pnpm --filter @claustrum/memory-core dev
 pnpm --filter @claustrum/admin-ui build
-```markdown
+```
 
 
 ## Guardrails

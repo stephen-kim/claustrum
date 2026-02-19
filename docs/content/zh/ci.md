@@ -46,7 +46,7 @@ Claustrum 会在每个 PR 和每次 `main` push 运行 release gate。
 
 ```shell
 RELEASE_GATE_RESET_DB=true ./scripts/release-gate.sh
-```text
+```
 
 ## 快速排障
 

@@ -38,7 +38,7 @@ Default severity:
   "category": "auth",
   "severity": "high"
 }
-```text
+```
 
 ## Workspace Controls
 

@@ -13,7 +13,7 @@ Example output:
 ```text
 Bootstrap admin created: admin@example.com
 Initial password (shown once): <random-password>
-```text
+```
 
 ## First login requirement
 

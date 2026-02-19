@@ -53,4 +53,4 @@ pnpm db:migrate
 pnpm db:seed
 pnpm dev
 pnpm test:workspace
-```text
+```

@@ -32,7 +32,7 @@
 pnpm install
 cp .env.example .env
 docker compose -f docker-compose.dev.yml --profile localdb up -d --build
-```markdown
+```
 
 ## ローカル開発（ローカルプロセス + DB コンテナ）
 
@@ -52,7 +52,7 @@ cp .env.example .env
 # .env の DATABASE_URL を外部 DB に変更
 # 例: postgres://user:pass@host:5432/db?sslmode=require
 docker compose up -d
-```markdown
+```
 
 ## MCP 設定ヘルパー
 
@@ -64,4 +64,4 @@ pnpm mcp:helper
 
 ```shell
 curl -fsSL https://raw.githubusercontent.com/stephen-kim/claustrum/main/scripts/mcp-config-helper.js -o ./claustrum-mcp-config-helper.js && node ./claustrum-mcp-config-helper.js
-```text
+```

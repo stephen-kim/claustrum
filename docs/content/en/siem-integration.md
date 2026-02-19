@@ -28,7 +28,7 @@ Signature input:
 
 ```text
 HMAC_SHA256(secret, raw_json_body)
-```markdown
+```
 
 ## Retry / Backoff
 

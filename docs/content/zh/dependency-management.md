@@ -36,7 +36,7 @@ Claustrum 官方包管理器统一使用 **pnpm**。
 packages:
   - "apps/*"
   - "packages/*"
-```markdown
+```
 
 ## 根脚本命令
 
@@ -67,7 +67,7 @@ pnpm dev
 ```shell
 pnpm --filter @claustrum/memory-core dev
 pnpm --filter @claustrum/admin-ui build
-```markdown
+```
 
 ## 防护规则
 

@@ -63,7 +63,7 @@ Workspace 멤버십 이벤트:
     "permission": "write"
   }
 }
-```text
+```
 ## 상관 ID 사용
 
 단일 작업으로 대량 업데이트를 그룹화하려면 `correlation_id`을 사용하세요.

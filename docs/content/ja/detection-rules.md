@@ -25,7 +25,7 @@ Detection Rules は、不審なアクセスパターンを閾値ベースで検�
     "via": "security_stream"
   }
 }
-```text
+```
 
 ## エンジン動作
 

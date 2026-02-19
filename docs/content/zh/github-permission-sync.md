@@ -30,7 +30,7 @@
   "triage": "reader",
   "read": "reader"
 }
-```text
+```
 
 ## unmatched user 处理
 

@@ -56,7 +56,7 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
       "write_on_merge": true
     }
   }'
-```markdown
+```
 
 4. Validate with API
 
@@ -74,7 +74,7 @@ curl -G "$MEMORY_CORE_URL/v1/notion/read" \
   --data-urlencode "workspace_key=personal" \
   --data-urlencode "page_id=<notion-page-id-or-url>" \
   --data-urlencode "max_chars=2000"
-```markdown
+```
 
 5. Validate from MCP tools
 - `notion_search({ q, limit? })`

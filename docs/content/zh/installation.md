@@ -32,7 +32,7 @@
 pnpm install
 cp .env.example .env
 docker compose -f docker-compose.dev.yml --profile localdb up -d --build
-```markdown
+```
 
 ## 本地开发（本地进程 + DB 容器）
 
@@ -52,7 +52,7 @@ cp .env.example .env
 # 将 DATABASE_URL 改为外部数据库
 # 例: postgres://user:pass@host:5432/db?sslmode=require
 docker compose up -d
-```markdown
+```
 
 ## MCP 配置助手
 
@@ -64,4 +64,4 @@ pnpm mcp:helper
 
 ```shell
 curl -fsSL https://raw.githubusercontent.com/stephen-kim/claustrum/main/scripts/mcp-config-helper.js -o ./claustrum-mcp-config-helper.js && node ./claustrum-mcp-config-helper.js
-```text
+```

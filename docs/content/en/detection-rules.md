@@ -25,7 +25,7 @@ Claustrum includes a minimal threshold-based detection engine for suspicious acc
     "via": "security_stream"
   }
 }
-```text
+```
 
 ## Engine Behavior
 

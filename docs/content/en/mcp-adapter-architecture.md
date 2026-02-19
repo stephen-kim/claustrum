@@ -15,7 +15,7 @@ Claustrum runs the MCP adapter locally as a thin process, while context logic an
     error.log
   state.json
   update.lock
-```text
+```
 
 ## Request path
 

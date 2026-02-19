@@ -30,7 +30,7 @@ Outputs:
 
 ```shell
 pnpm eval:bundle
-```markdown
+```
 
 Opciones comunes:
 
@@ -55,7 +55,7 @@ pnpm eval:bundle -- --mask true
 
 ```shell
 pnpm eval:diff -- --a eval/runs/<runA> --b eval/runs/<runB>
-```markdown
+```
 
 Compara:
 - IDs de global rules

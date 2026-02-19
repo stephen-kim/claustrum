@@ -36,7 +36,7 @@ Claustrum の公式パッケージマネージャーは **pnpm** です。
 packages:
   - "apps/*"
   - "packages/*"
-```markdown
+```
 
 ## ルートコマンド
 
@@ -67,7 +67,7 @@ pnpm dev
 ```shell
 pnpm --filter @claustrum/memory-core dev
 pnpm --filter @claustrum/admin-ui build
-```markdown
+```
 
 ## ガードレール
 

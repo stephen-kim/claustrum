@@ -13,7 +13,7 @@ access_allowed = (
     oidc_gate_passed
     AND effective_role != none
 )
-```text
+```
 
 ## 输入项
 

@@ -66,7 +66,7 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
       "api_token": "atlassian-token"
     }
   }'
-```markdown
+```
 
 ```shell
 curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
@@ -92,7 +92,7 @@ curl -G "$MEMORY_CORE_URL/v1/jira/search" \
   --data-urlencode "workspace_key=personal" \
   --data-urlencode "q=deployment incident" \
   --data-urlencode "limit=5"
-```markdown
+```
 
 ```shell
 curl -G "$MEMORY_CORE_URL/v1/confluence/search" \

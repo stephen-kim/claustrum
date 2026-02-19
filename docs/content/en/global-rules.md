@@ -43,7 +43,7 @@ Body:
   "scope": "workspace",
   "mode": "preview"
 }
-```yaml
+```
 
 Modes:
 

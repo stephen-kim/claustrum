@@ -63,7 +63,7 @@ Example (role change):
     "permission": "write"
   }
 }
-```yaml
+```
 
 ## Correlation ID Usage
 

@@ -27,7 +27,7 @@ Claustrum 可通过 Audit Sinks 将审计事件推送到外部 SIEM。
 
 ```text
 HMAC_SHA256(secret, raw_json_body)
-```markdown
+```
 
 ## 重试策略
 

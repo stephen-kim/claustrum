@@ -18,7 +18,7 @@ En Claustrum, GitHub es la autoridad principal para permisos a nivel de proyecto
 
 ```text
 final_perm = max(direct_collaborator_perm, team_derived_perm)
-```markdown
+```
 
 Orden de prioridad:
 

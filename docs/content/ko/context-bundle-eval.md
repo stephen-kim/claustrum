@@ -31,7 +31,7 @@ Context Bundle Eval은 `/v1/context/bundle`에 대한 지속적인 품질 검사
 
 ```shell
 pnpm eval:bundle
-```markdown
+```
 일반적인 옵션:
 
 ```shell
@@ -62,7 +62,7 @@ pnpm eval:bundle -- --out-dir eval/runs/manual-01
 
 ```shell
 pnpm eval:diff -- --a eval/runs/<runA> --b eval/runs/<runB>
-```markdown
+```
 비교된 치수:
 - 전역 규칙 선택 ID
 - `snapshot.top_decisions` (`id:title`)
@@ -109,7 +109,7 @@ pnpm eval:bundle -- --judge true
 
 ```shell
 pnpm eval:report
-```text
+```
 ## 보안 참고 사항
 
 - 평가 출력에 API 키를 인쇄하거나 저장하지 마세요.

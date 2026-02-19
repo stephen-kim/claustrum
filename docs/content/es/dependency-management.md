@@ -36,7 +36,7 @@ Si aparece un lockfile de npm o yarn por error, elimínalo y vuelve a instalar c
 packages:
   - "apps/*"
   - "packages/*"
-```markdown
+```
 
 ## Comandos de raíz
 
@@ -67,7 +67,7 @@ Puedes usar filtros por paquete cuando haga falta:
 ```shell
 pnpm --filter @claustrum/memory-core dev
 pnpm --filter @claustrum/admin-ui build
-```markdown
+```
 
 ## Protecciones
 

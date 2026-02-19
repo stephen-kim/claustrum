@@ -18,7 +18,7 @@ Claustrum の project 権限は、基本的に GitHub を一次ソースとし�
 
 ```text
 final_perm = max(direct_collaborator_perm, team_derived_perm)
-```markdown
+```
 
 優先順位:
 

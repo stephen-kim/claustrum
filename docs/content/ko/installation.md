@@ -62,7 +62,7 @@
 pnpm install
 cp .env.example .env
 docker compose -f docker-compose.dev.yml --profile localdb up -d --build
-```markdown
+```
 
 접속 주소:
 
@@ -86,7 +86,7 @@ pnpm dev
 
 ```shell
 cp .env.example .env
-```markdown
+```
 
 2. `DATABASE_URL`을 외부 DB로 설정
 
@@ -98,7 +98,7 @@ DATABASE_URL=postgres://<user>:<pass>@<rds-endpoint>:5432/<db>?sslmode=require
 
 ```shell
 docker compose up -d
-```markdown
+```
 
 ## Docker 네트워크 주의사항
 
@@ -133,7 +133,7 @@ MEMORY_CORE_URL = "http://127.0.0.1:8080"
 MEMORY_CORE_API_KEY = "<runtime-api-key>"
 MEMORY_CORE_WORKSPACE_KEY = "personal"
 MCP_ADAPTER_LOG_LEVEL = "error"
-```markdown
+```
 
 참고:
 
@@ -161,7 +161,7 @@ pnpm mcp:helper
 
 ```shell
 curl -fsSL https://raw.githubusercontent.com/stephen-kim/claustrum/main/scripts/mcp-config-helper.js -o ./claustrum-mcp-config-helper.js && node ./claustrum-mcp-config-helper.js
-```markdown
+```
 
 Windows PowerShell:
 

@@ -6,7 +6,7 @@ Release Gate는 하나의 명령으로 고위험 출시 전 QC 검사를 실행�
 
 ```shell
 RELEASE_GATE_RESET_DB=true ./scripts/release-gate.sh
-```markdown
+```
 ## 환경 변수
 
 - `BASE_URL` (기본값: `http://localhost:8080`)

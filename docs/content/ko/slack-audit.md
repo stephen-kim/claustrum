@@ -69,7 +69,7 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
       ]
     }
   }'
-```markdown
+```
 4. 트리거 및 확인
 - 감사된 작업을 트리거합니다(예: `reason`을 사용하여 통합 설정 저장).
 - 메시지 전달을 위해 Slack 채널을 확인하세요.

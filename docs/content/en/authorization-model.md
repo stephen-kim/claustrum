@@ -31,7 +31,7 @@ Effective Role Calculation
   |
   v
 Project Access (Allow / Deny)
-```text
+```
 
 ## Source of Truth
 

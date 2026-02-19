@@ -73,7 +73,7 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
       ]
     }
   }'
-```markdown
+```
 
 4. Trigger and verify
 - Trigger an audited action (example: save any integration setting with `reason`).

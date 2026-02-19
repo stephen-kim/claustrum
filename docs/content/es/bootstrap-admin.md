@@ -13,7 +13,7 @@ Salida de ejemplo:
 ```text
 Bootstrap admin created: admin@example.com
 Initial password (shown once): <random-password>
-```text
+```
 ## Primer requisito de inicio de sesión
 
 Después de iniciar sesión con las credenciales de arranque, se debe completar la configuración antes de usar la plataforma:

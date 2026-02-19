@@ -28,7 +28,7 @@ Claustrum은 **감사 싱크**를 통해 append-only 감사 이벤트를 외부 
 
 ```text
 HMAC_SHA256(secret, raw_json_body)
-```markdown
+```
 ## 재시도/백오프
 
 싱크당 `retry_policy`:

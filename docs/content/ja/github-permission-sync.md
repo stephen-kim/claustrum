@@ -30,7 +30,7 @@ GitHub 側の権限を Claustrum の project role に反映する機能です。
   "triage": "reader",
   "read": "reader"
 }
-```text
+```
 
 ## unmatched user の扱い
 

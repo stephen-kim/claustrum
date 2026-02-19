@@ -6,7 +6,7 @@ Release Gate runs high-risk pre-release QC checks in one command.
 
 ```shell
 RELEASE_GATE_RESET_DB=true ./scripts/release-gate.sh
-```markdown
+```
 
 ## Environment Variables
 

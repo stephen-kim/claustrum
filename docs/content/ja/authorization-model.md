@@ -25,7 +25,7 @@ Manual Override (Exception)
 Effective Role
   ↓
 Project Access (Allow / Deny)
-```text
+```
 
 ## ソースオブトゥルース
 

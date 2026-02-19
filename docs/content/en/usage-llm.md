@@ -31,7 +31,7 @@ Model pricing is managed in `llm_pricing`.
 estimated_cost_cents =
   (input_tokens / 1000) * input_token_price_per_1k_cents +
   (output_tokens / 1000) * output_token_price_per_1k_cents
-```text
+```
 
 If pricing is missing for a model, cost is reported as `0` or `null` depending on available usage metadata.
 

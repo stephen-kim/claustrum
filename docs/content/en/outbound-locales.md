@@ -41,7 +41,7 @@ Supported locale filtering applies at both workspace and integration policy leve
     "ko": "원문 로그에서 \"{{ q }}\"를 검색했습니다. (결과 {{ count }}개)"
   }
 }
-```text
+```
 
 Rules:
 

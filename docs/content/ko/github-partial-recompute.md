@@ -62,7 +62,7 @@ flowchart TD
   G --> H["Run sync-permissions with repos filter"]
   H --> I["Write audit github.permissions.recomputed"]
   I --> J["Mark event done with affected_repos_count"]
-```text
+```
 ## 작업 참고 사항
 
 - `delivery_id` 고유 제약 조건으로 전송 중복 제거가 보장됩니다.

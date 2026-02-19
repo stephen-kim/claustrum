@@ -13,7 +13,7 @@ Claustrum 提供首次安装时的 bootstrap admin 流程。
 ```text
 Bootstrap admin created: admin@example.com
 Initial password (shown once): <random-password>
-```text
+```
 
 ## 首次登录后必须完成
 

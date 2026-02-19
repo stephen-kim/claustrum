@@ -56,7 +56,7 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
       "api_url": "https://api.linear.app/graphql"
     }
   }'
-```markdown
+```
 
 4. Validate with API
 
@@ -74,7 +74,7 @@ curl -G "$MEMORY_CORE_URL/v1/linear/read" \
   --data-urlencode "workspace_key=personal" \
   --data-urlencode "issue_key=ENG-123" \
   --data-urlencode "max_chars=2000"
-```text
+```
 
 5. Validate from MCP tools
 - `linear_search({ q, limit? })`

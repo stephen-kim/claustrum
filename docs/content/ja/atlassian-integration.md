@@ -54,7 +54,7 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
       "api_token": "atlassian-token"
     }
   }'
-```yaml
+```
 
 4. 接続確認
 - `/v1/jira/search`

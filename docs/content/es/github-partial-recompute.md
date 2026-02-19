@@ -46,7 +46,7 @@ flowchart TD
   G --> H["Run sync-permissions with repos filter"]
   H --> I["Write audit github.permissions.recomputed"]
   I --> J["Mark event done with affected_repos_count"]
-```text
+```
 
 ## Operación
 

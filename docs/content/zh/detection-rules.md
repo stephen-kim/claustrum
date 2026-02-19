@@ -25,7 +25,7 @@ Detection Rules 用于按阈值识别可疑访问行为。
     "via": "security_stream"
   }
 }
-```text
+```
 
 ## 引擎行为
 

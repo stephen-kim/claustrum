@@ -28,7 +28,7 @@ Claustrum 会按每次 LLM 调用记录用量事件，用于观察 token 消耗�
 estimated_cost_cents =
   (input_tokens / 1000) * input_token_price_per_1k_cents +
   (output_tokens / 1000) * output_token_price_per_1k_cents
-```text
+```
 
 ## Usage API
 

@@ -28,7 +28,7 @@ Claustrum은 LLM 호출 비용을 운영 관점에서 추적할 수 있도록, �
 estimated_cost_cents =
   (input_tokens / 1000) * input_token_price_per_1k_cents +
   (output_tokens / 1000) * output_token_price_per_1k_cents
-```text
+```
 
 모델 단가가 등록되지 않은 경우 `estimated_cost_cents`는 `0` 또는 `null`로 내려올 수 있습니다.
 

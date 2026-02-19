@@ -17,7 +17,7 @@ OIDC 身份以以下元组识别：
 
 ```text
 (issuer, subject)
-```text
+```
 
 - email 可变，不作为主键。
 

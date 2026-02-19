@@ -25,7 +25,7 @@ Manual Override
 Effective Role
   ↓
 Project Access
-```text
+```
 
 ## Prioridad de resolucion
 

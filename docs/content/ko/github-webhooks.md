@@ -34,7 +34,7 @@ flowchart LR
   W --> EV2["team/membership -> apply team mappings"]
   W --> EV3["repository renamed -> update repo links"]
   W --> DONE["status=done or failed"]
-```text
+```
 ## 작업 공간 제어
 
 작업공간 설정:

@@ -36,7 +36,7 @@ npm 잠금 파일이 실수로 나타나면 제거하고 pnpm으로 다시 설�
 packages:
   - "apps/*"
   - "packages/*"
-```markdown
+```
 ## 루트 명령
 
 - `pnpm dev` → `pnpm -r dev`
@@ -65,7 +65,7 @@ pnpm dev
 ```shell
 pnpm --filter @claustrum/memory-core dev
 pnpm --filter @claustrum/admin-ui build
-```markdown
+```
 ## 가드레일
 
 `.npmrc`은 다음을 시행합니다.

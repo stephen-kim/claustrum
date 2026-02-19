@@ -44,7 +44,7 @@ GitHub 권한 동기화는 두 부분으로 구성됩니다.
   "triage": "reader",
   "read": "reader"
 }
-```text
+```
 ## 운영 팁
 
 - 프로덕션 작업 공간에 변경 사항을 적용하기 전에 `dry_run=true`을 사용하세요.
