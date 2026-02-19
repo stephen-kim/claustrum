@@ -119,11 +119,21 @@ const components: Components = {
   },
 };
 
+const rehypeHighlightOptions = {
+  ignoreMissing: true,
+  aliases: {
+    shell: 'bash',
+    sh: 'bash',
+    zsh: 'bash',
+    pwsh: 'powershell',
+  },
+};
+
 export function MarkdownDocContent({ body }: Props) {
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkAdmonitionBlocks]}
-      rehypePlugins={[rehypeHighlight]}
+      rehypePlugins={[[rehypeHighlight, rehypeHighlightOptions]]}
       components={components}
     >
       {body}
