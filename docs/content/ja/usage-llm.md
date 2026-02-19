@@ -28,7 +28,7 @@ Claustrum は LLM 呼び出しごとに usage イベントを記録し、token �
 estimated_cost_cents =
   (input_tokens / 1000) * input_token_price_per_1k_cents +
   (output_tokens / 1000) * output_token_price_per_1k_cents
-```
+```text
 
 ## Usage API
 

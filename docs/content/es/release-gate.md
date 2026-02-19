@@ -4,9 +4,9 @@ Release Gate ejecuta, en una sola pasada, las validaciones de mayor riesgo antes
 
 ## Ejecución
 
-```bash
+```shell
 RELEASE_GATE_RESET_DB=true ./scripts/release-gate.sh
-```
+```text
 
 ## Variables clave
 

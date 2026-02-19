@@ -28,7 +28,7 @@ Cálculo:
 
 ```text
 HMAC_SHA256(secret, raw_json_body)
-```
+```markdown
 
 ## Política de reintento
 

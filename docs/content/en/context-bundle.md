@@ -40,7 +40,7 @@ Claustrum provides a normalized context bundle so Codex/Claude/Cursor-like clien
     "token_budget": {}
   }
 }
-```
+```text
 
 ## Rules
 

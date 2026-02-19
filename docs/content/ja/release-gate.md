@@ -4,9 +4,9 @@ Release Gate は、リリース前に必須チェックをまとめて実行す�
 
 ## 実行
 
-```bash
+```shell
 RELEASE_GATE_RESET_DB=true ./scripts/release-gate.sh
-```
+```text
 
 ## 主要環境変数
 

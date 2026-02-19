@@ -36,7 +36,7 @@ Claustrum の公式パッケージマネージャーは **pnpm** です。
 packages:
   - "apps/*"
   - "packages/*"
-```
+```markdown
 
 ## ルートコマンド
 
@@ -57,17 +57,17 @@ CI では次の順で実行します。
 
 ## ローカル開発
 
-```bash
+```shell
 pnpm install
 pnpm dev
 ```
 
 必要に応じて filter を使います。
 
-```bash
+```shell
 pnpm --filter @claustrum/memory-core dev
 pnpm --filter @claustrum/admin-ui build
-```
+```markdown
 
 ## ガードレール
 

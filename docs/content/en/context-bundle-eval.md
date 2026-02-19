@@ -32,13 +32,13 @@ Run outputs:
 
 ## Run Eval
 
-```bash
+```shell
 pnpm eval:bundle
-```
+```markdown
 
 Common options:
 
-```bash
+```shell
 pnpm eval:bundle -- --base-url http://localhost:8080
 pnpm eval:bundle -- --limit 10
 pnpm eval:bundle -- --debug true
@@ -67,9 +67,9 @@ Outputs:
 
 ## Diff Two Runs
 
-```bash
+```shell
 pnpm eval:diff -- --a eval/runs/<runA> --b eval/runs/<runB>
-```
+```markdown
 
 Compared dimensions:
 - global rule selected IDs
@@ -95,7 +95,7 @@ LLM judge is optional and disabled by default.
 
 Enable:
 
-```bash
+```shell
 EVAL_JUDGE_PROVIDER=openai \
 EVAL_JUDGE_API_KEY=*** \
 pnpm eval:bundle -- --judge true
@@ -118,9 +118,9 @@ When env vars are missing, judge is skipped and scoring stays rule-based only.
 
 Show latest report:
 
-```bash
+```shell
 pnpm eval:report
-```
+```text
 
 
 ## Security Notes

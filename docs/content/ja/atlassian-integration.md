@@ -39,7 +39,7 @@ Confluence:
 
 3. API で設定保存（任意）
 
-```bash
+```shell
 curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   -H "Content-Type: application/json" \
@@ -54,7 +54,7 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
       "api_token": "atlassian-token"
     }
   }'
-```
+```yaml
 
 4. 接続確認
 - `/v1/jira/search`

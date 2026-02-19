@@ -29,12 +29,12 @@ Context Bundle Eval은 `/v1/context/bundle`에 대한 지속적인 품질 검사
 
 ## 평가 실행
 
-```bash
+```shell
 pnpm eval:bundle
-```
+```markdown
 일반적인 옵션:
 
-```bash
+```shell
 pnpm eval:bundle -- --base-url http://localhost:8080
 pnpm eval:bundle -- --limit 10
 pnpm eval:bundle -- --debug true
@@ -60,9 +60,9 @@ pnpm eval:bundle -- --out-dir eval/runs/manual-01
 
 ## 두 번의 실행 비교
 
-```bash
+```shell
 pnpm eval:diff -- --a eval/runs/<runA> --b eval/runs/<runB>
-```
+```markdown
 비교된 치수:
 - 전역 규칙 선택 ID
 - `snapshot.top_decisions` (`id:title`)
@@ -86,7 +86,7 @@ LLM 판사는 선택 사항이며 기본적으로 비활성화되어 있습니�
 
 실행 방법:
 
-```bash
+```shell
 EVAL_JUDGE_PROVIDER=openai \
 EVAL_JUDGE_API_KEY=*** \
 pnpm eval:bundle -- --judge true
@@ -107,9 +107,9 @@ pnpm eval:bundle -- --judge true
 
 최신 보고서 표시:
 
-```bash
+```shell
 pnpm eval:report
-```
+```text
 ## 보안 참고 사항
 
 - 평가 출력에 API 키를 인쇄하거나 저장하지 마세요.

@@ -8,7 +8,7 @@ El permiso final se calcula así:
 
 ```text
 final_permission = max(direct collaborator permission, team-derived permissions)
-```
+```markdown
 
 Orden de prioridad:
 

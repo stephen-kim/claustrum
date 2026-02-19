@@ -58,11 +58,11 @@
 
 ## 로컬 개발: 소스 빌드 컨테이너
 
-```bash
+```shell
 pnpm install
 cp .env.example .env
 docker compose -f docker-compose.dev.yml --profile localdb up -d --build
-```
+```markdown
 
 접속 주소:
 
@@ -71,7 +71,7 @@ docker compose -f docker-compose.dev.yml --profile localdb up -d --build
 
 ## 로컬 개발: 로컬 프로세스 + DB 컨테이너
 
-```bash
+```shell
 pnpm install
 cp .env.example .env
 docker compose --profile localdb up -d postgres
@@ -84,21 +84,21 @@ pnpm dev
 
 1. 환경 파일 복사
 
-```bash
+```shell
 cp .env.example .env
-```
+```markdown
 
 2. `DATABASE_URL`을 외부 DB로 설정
 
-```bash
+```shell
 DATABASE_URL=postgres://<user>:<pass>@<rds-endpoint>:5432/<db>?sslmode=require
 ```
 
 3. localdb profile 없이 실행
 
-```bash
+```shell
 docker compose up -d
-```
+```markdown
 
 ## Docker 네트워크 주의사항
 
@@ -133,7 +133,7 @@ MEMORY_CORE_URL = "http://127.0.0.1:8080"
 MEMORY_CORE_API_KEY = "<runtime-api-key>"
 MEMORY_CORE_WORKSPACE_KEY = "personal"
 MCP_ADAPTER_LOG_LEVEL = "error"
-```
+```markdown
 
 참고:
 
@@ -145,7 +145,7 @@ MCP_ADAPTER_LOG_LEVEL = "error"
 
 대화형 헬퍼 실행:
 
-```bash
+```shell
 pnpm mcp:helper
 ```
 
@@ -159,9 +159,9 @@ pnpm mcp:helper
 
 원라인 실행:
 
-```bash
+```shell
 curl -fsSL https://raw.githubusercontent.com/stephen-kim/claustrum/main/scripts/mcp-config-helper.js -o ./claustrum-mcp-config-helper.js && node ./claustrum-mcp-config-helper.js
-```
+```markdown
 
 Windows PowerShell:
 

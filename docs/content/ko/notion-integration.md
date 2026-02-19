@@ -36,7 +36,7 @@ AI 워크플로의 외부 컨텍스트로 Notion을 사용합니다.
 
 3. API를 통해 구성 저장(선택 사항)
 
-```bash
+```shell
 curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   -H "Content-Type: application/json" \
@@ -52,10 +52,10 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
       "write_on_merge": true
     }
   }'
-```
+```markdown
 4. API로 검증
 
-```bash
+```shell
 curl -G "$MEMORY_CORE_URL/v1/notion/search" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   --data-urlencode "workspace_key=personal" \
@@ -63,13 +63,13 @@ curl -G "$MEMORY_CORE_URL/v1/notion/search" \
   --data-urlencode "limit=5"
 ```
 
-```bash
+```shell
 curl -G "$MEMORY_CORE_URL/v1/notion/read" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   --data-urlencode "workspace_key=personal" \
   --data-urlencode "page_id=<notion-page-id-or-url>" \
   --data-urlencode "max_chars=2000"
-```
+```markdown
 5. MCP 도구에서 유효성을 검사합니다.
 - `notion_search({ q, limit? })`
 - `notion_read({ page_id, max_chars? })`

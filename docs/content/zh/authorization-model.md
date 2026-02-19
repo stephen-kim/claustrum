@@ -25,7 +25,7 @@ Manual Override
 Effective Role
   ↓
 Project Access
-```
+```text
 
 ## 优先级
 

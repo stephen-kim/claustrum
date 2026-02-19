@@ -23,9 +23,9 @@ Te ayuda a mantener el contexto entre repositorios, herramientas y personas sin 
 
 macOS / Linux:
 
-```bash
+```shell
 curl -fsSL https://raw.githubusercontent.com/stephen-kim/claustrum/main/scripts/mcp-config-helper.js -o ./claustrum-mcp-config-helper.js && node ./claustrum-mcp-config-helper.js
-```
+```markdown
 
 Windows PowerShell:
 

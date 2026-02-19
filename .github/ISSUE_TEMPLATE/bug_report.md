@@ -42,7 +42,7 @@ assignees: ''
 <!-- If applicable, paste relevant logs -->
 
 **Claude Desktop logs:**
-```
+```text
 <!-- Mac: ~/Library/Logs/Claude/mcp-server-context-sync.log -->
 <!-- Windows: %LOCALAPPDATA%\Claude\logs\mcp-server-context-sync.log -->
 ```
@@ -53,7 +53,7 @@ assignees: ''
 <!-- Your Claude Desktop config (remove sensitive paths) -->
 ```json
 
-```
+```text
 
 
 ## Additional Context

@@ -38,7 +38,7 @@ Claustrum은 보안 관련 감사 트래픽과 일반 운영 감사 트래픽을
   "category": "auth",
   "severity": "high"
 }
-```
+```text
 ## 작업 공간 제어
 
 `workspace_settings`:

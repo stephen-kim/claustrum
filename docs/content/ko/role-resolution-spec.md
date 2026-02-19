@@ -13,7 +13,7 @@ access_allowed = (
     oidc_gate_passed
     AND effective_role != none
 )
-```
+```text
 ## 해상도 입력
 
 - `manual_override`: 명시적인 관리자 관리 예외입니다.

@@ -13,7 +13,7 @@ Claustrum은 깨끗한 초기 설치를 위한 첫 실행 부트스트랩 관리
 ```text
 Bootstrap admin created: admin@example.com
 Initial password (shown once): <random-password>
-```
+```text
 ## 첫 번째 로그인 요구 사항
 
 부트스트랩 자격 증명으로 로그인한 후 플랫폼을 사용하기 전에 설정을 완료해야 합니다.

@@ -47,7 +47,7 @@ This is an outbound notification integration (no MCP read tool).
 
 3. Save config via API (optional)
 
-```bash
+```shell
 curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   -H "Content-Type: application/json" \
@@ -73,14 +73,14 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
       ]
     }
   }'
-```
+```markdown
 
 4. Trigger and verify
 - Trigger an audited action (example: save any integration setting with `reason`).
 - Check Slack channel for message delivery.
 - Check API-side logs:
 
-```bash
+```shell
 curl -G "$MEMORY_CORE_URL/v1/audit-logs" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   --data-urlencode "workspace_key=personal" \

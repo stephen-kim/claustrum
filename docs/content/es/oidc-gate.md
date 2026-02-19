@@ -17,7 +17,7 @@ La identidad OIDC se fija con:
 
 ```text
 (issuer, subject)
-```
+```text
 
 - el email puede cambiar, por eso no se usa como clave principal
 

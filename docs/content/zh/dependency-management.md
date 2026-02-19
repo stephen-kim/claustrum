@@ -36,7 +36,7 @@ Claustrum 官方包管理器统一使用 **pnpm**。
 packages:
   - "apps/*"
   - "packages/*"
-```
+```markdown
 
 ## 根脚本命令
 
@@ -57,17 +57,17 @@ CI 需按以下顺序执行：
 
 ## 本地开发
 
-```bash
+```shell
 pnpm install
 pnpm dev
 ```
 
 按需使用 package filter：
 
-```bash
+```shell
 pnpm --filter @claustrum/memory-core dev
 pnpm --filter @claustrum/admin-ui build
-```
+```markdown
 
 ## 防护规则
 

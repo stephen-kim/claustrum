@@ -14,7 +14,7 @@ Claustrum identifies OIDC users by immutable identity tuple:
 
 ```text
 (issuer, subject)
-```
+```text
 
 Email is mutable and is not used as the primary identity key.
 

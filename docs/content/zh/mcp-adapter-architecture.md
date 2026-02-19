@@ -16,7 +16,7 @@ Claustrum 的 MCP adapter 在本地以轻量进程运行，
     error.log
   state.json
   update.lock
-```
+```text
 
 ## 请求链路
 

@@ -33,7 +33,7 @@ El filtro de `supported_locales` aplica tanto a nivel workspace como integració
     "ko": "원문 로그에서 \"{{ q }}\"를 검색했습니다. (결과 {{ count }}개)"
   }
 }
-```
+```text
 
 Reglas:
 - motor fijo: Liquid

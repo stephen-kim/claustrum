@@ -53,7 +53,7 @@ apps/
   admin-ui/
 packages/
   shared/
-```
+```text
 
 
 ## Upstream

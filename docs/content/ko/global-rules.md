@@ -43,7 +43,7 @@ Claustrum은 두 가지 전역 규칙 범위를 지원합니다.
   "scope": "workspace",
   "mode": "preview"
 }
-```
+```text
 모드:
 
 - `preview`: 요약 텍스트만 반환합니다.

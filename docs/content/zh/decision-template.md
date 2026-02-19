@@ -45,4 +45,4 @@ Impact:
 Evidence:
 - commit_sha: 8c3f0a12d9
 - raw_event_id: 8d53cceb-2aab-4f08-9bf4-b038b5f76f33
-```
+```text

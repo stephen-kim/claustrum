@@ -5,13 +5,13 @@ Thanks for contributing to Claustrum.
 
 ## Development Setup
 
-```bash
+```shell
 pnpm install
 cp .env.example .env
 pnpm db:migrate
 pnpm db:seed
 pnpm dev
-```
+```text
 
 
 ## Before Opening a PR

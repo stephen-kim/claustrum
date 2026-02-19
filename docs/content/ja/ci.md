@@ -44,9 +44,9 @@ Claustrum は PR と `main` への push で release gate を実行します。
 
 ## ローカル再現
 
-```bash
+```shell
 RELEASE_GATE_RESET_DB=true ./scripts/release-gate.sh
-```
+```text
 
 ## トラブルシューティング
 

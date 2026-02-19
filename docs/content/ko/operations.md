@@ -62,7 +62,7 @@ flowchart TD
   L --> M
   F --> N["Execute tool"]
   M --> N
-```
+```markdown
 
 기본값:
 
@@ -94,7 +94,7 @@ flowchart TD
 
 ## 자주 쓰는 명령어
 
-```bash
+```shell
 pnpm install
 pnpm db:migrate
 pnpm db:seed

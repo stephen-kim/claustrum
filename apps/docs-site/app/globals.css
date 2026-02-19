@@ -63,7 +63,7 @@
   }
 
   .prose-docs {
-    @apply prose prose-invert max-w-none prose-headings:scroll-mt-24 prose-a:text-primary prose-pre:border prose-pre:border-border prose-pre:bg-muted/30;
+    @apply prose prose-invert max-w-none prose-headings:scroll-mt-24 prose-a:text-primary;
   }
 
   .prose-docs :where(strong) {
@@ -78,6 +78,14 @@
   .prose-docs :where(code):not(:where(pre code))::before,
   .prose-docs :where(code):not(:where(pre code))::after {
     content: '';
+  }
+
+  .prose-docs :where(pre) {
+    @apply border-0 bg-transparent p-0 shadow-none;
+  }
+
+  .prose-docs :where(pre code) {
+    @apply m-0;
   }
 
   .prose-docs :where(pre code.hljs) {

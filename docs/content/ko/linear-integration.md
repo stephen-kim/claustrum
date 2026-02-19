@@ -38,7 +38,7 @@ MCP 워크플로의 외부 문제 컨텍스트 소스로 Linear를 사용합니�
 
 3. API를 통해 구성 저장(선택 사항)
 
-```bash
+```shell
 curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   -H "Content-Type: application/json" \
@@ -52,10 +52,10 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
       "api_url": "https://api.linear.app/graphql"
     }
   }'
-```
+```markdown
 4. API로 검증
 
-```bash
+```shell
 curl -G "$MEMORY_CORE_URL/v1/linear/search" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   --data-urlencode "workspace_key=personal" \
@@ -63,13 +63,13 @@ curl -G "$MEMORY_CORE_URL/v1/linear/search" \
   --data-urlencode "limit=5"
 ```
 
-```bash
+```shell
 curl -G "$MEMORY_CORE_URL/v1/linear/read" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   --data-urlencode "workspace_key=personal" \
   --data-urlencode "issue_key=ENG-123" \
   --data-urlencode "max_chars=2000"
-```
+```text
 5. MCP 도구에서 유효성을 검사합니다.
 - `linear_search({ q, limit? })`
 - `linear_read({ issue_key, max_chars? })`

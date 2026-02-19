@@ -31,7 +31,7 @@ Claustrum은 저장소 기반 프로젝트 프로비저닝을 지원합니다.
 
 ```text
 final_perm = max(direct_collaborator_perm, team_derived_perm)
-```
+```markdown
 허가 순서:
 
 ```text

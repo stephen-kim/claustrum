@@ -22,7 +22,7 @@ flowchart TD
   I -- "yes" --> J["Create decision memory (draft by default)"]
   I -- "no" --> K["Mark event as processed (not_decision)"]
   G -- "no" --> L["No decision job"]
-```
+```markdown
 ## 중요 규칙: 키워드는 예약 전용입니다.
 
 `decision_keyword_policies`은 **LLM 처리 우선순위에만** 영향을 미칩니다.

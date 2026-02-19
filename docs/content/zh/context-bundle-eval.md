@@ -28,13 +28,13 @@
 
 ## 运行
 
-```bash
+```shell
 pnpm eval:bundle
-```
+```markdown
 
 常用参数：
 
-```bash
+```shell
 pnpm eval:bundle -- --base-url http://localhost:8080
 pnpm eval:bundle -- --limit 10
 pnpm eval:bundle -- --debug true
@@ -53,9 +53,9 @@ pnpm eval:bundle -- --mask true
 
 ## run 对比
 
-```bash
+```shell
 pnpm eval:diff -- --a eval/runs/<runA> --b eval/runs/<runB>
-```
+```markdown
 
 比较内容：
 - global rule IDs
@@ -66,7 +66,7 @@ pnpm eval:diff -- --a eval/runs/<runA> --b eval/runs/<runB>
 
 ## LLM Judge（可选）
 
-```bash
+```shell
 EVAL_JUDGE_PROVIDER=openai \
 EVAL_JUDGE_API_KEY=*** \
 pnpm eval:bundle -- --judge true

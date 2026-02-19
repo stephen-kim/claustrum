@@ -16,7 +16,7 @@ Claustrum の MCP adapter はローカルで動く薄いプロセスです。
     error.log
   state.json
   update.lock
-```
+```text
 
 ## リクエストの流れ
 

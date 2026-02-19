@@ -42,7 +42,7 @@ Use Linear as an external issue context source for MCP workflows:
 
 3. Save config via API (optional)
 
-```bash
+```shell
 curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   -H "Content-Type: application/json" \
@@ -56,11 +56,11 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
       "api_url": "https://api.linear.app/graphql"
     }
   }'
-```
+```markdown
 
 4. Validate with API
 
-```bash
+```shell
 curl -G "$MEMORY_CORE_URL/v1/linear/search" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   --data-urlencode "workspace_key=personal" \
@@ -68,13 +68,13 @@ curl -G "$MEMORY_CORE_URL/v1/linear/search" \
   --data-urlencode "limit=5"
 ```
 
-```bash
+```shell
 curl -G "$MEMORY_CORE_URL/v1/linear/read" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   --data-urlencode "workspace_key=personal" \
   --data-urlencode "issue_key=ENG-123" \
   --data-urlencode "max_chars=2000"
-```
+```text
 
 5. Validate from MCP tools
 - `linear_search({ q, limit? })`

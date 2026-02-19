@@ -31,7 +31,7 @@ Project-level GitHub permission is computed as:
 
 ```text
 final_perm = max(direct_collaborator_perm, team_derived_perm)
-```
+```markdown
 
 Permission order:
 

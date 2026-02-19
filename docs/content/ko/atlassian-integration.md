@@ -51,7 +51,7 @@ MCP 워크플로에서 Jira 및 Confluence를 외부 컨텍스트 소스로 사�
 
 3. API를 통해 구성 저장(선택 사항)
 
-```bash
+```shell
 curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   -H "Content-Type: application/json" \
@@ -66,9 +66,9 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
       "api_token": "atlassian-token"
     }
   }'
-```
+```markdown
 
-```bash
+```shell
 curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   -H "Content-Type: application/json" \
@@ -86,15 +86,15 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
 ```
 4. API로 검증
 
-```bash
+```shell
 curl -G "$MEMORY_CORE_URL/v1/jira/search" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   --data-urlencode "workspace_key=personal" \
   --data-urlencode "q=deployment incident" \
   --data-urlencode "limit=5"
-```
+```markdown
 
-```bash
+```shell
 curl -G "$MEMORY_CORE_URL/v1/confluence/search" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   --data-urlencode "workspace_key=personal" \

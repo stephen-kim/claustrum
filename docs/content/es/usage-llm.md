@@ -28,7 +28,7 @@ Claustrum registra uso por llamada LLM para visibilidad de tokens y coste estima
 estimated_cost_cents =
   (input_tokens / 1000) * input_token_price_per_1k_cents +
   (output_tokens / 1000) * output_token_price_per_1k_cents
-```
+```text
 
 ## API de uso
 

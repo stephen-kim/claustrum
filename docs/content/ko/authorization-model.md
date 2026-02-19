@@ -31,7 +31,7 @@ Effective Role Calculation
   |
   v
 Project Access (Allow / Deny)
-```
+```text
 ## 진실의 근원
 
 > Claustrum은 GitHub를 프로젝트 수준 액세스를 위한 주요 정보 소스로 취급합니다.

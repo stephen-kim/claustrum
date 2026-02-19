@@ -44,9 +44,9 @@ Hace:
 
 ## Repro local
 
-```bash
+```shell
 RELEASE_GATE_RESET_DB=true ./scripts/release-gate.sh
-```
+```text
 
 ## Troubleshooting rápido
 

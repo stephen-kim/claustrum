@@ -32,7 +32,7 @@ Sincroniza permisos reales de GitHub hacia roles de proyecto en Claustrum.
   "triage": "reader",
   "read": "reader"
 }
-```
+```text
 
 ## Unmatched users
 

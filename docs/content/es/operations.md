@@ -47,10 +47,10 @@ Configurable por workspace:
 
 ## Comandos útiles
 
-```bash
+```shell
 pnpm install
 pnpm db:migrate
 pnpm db:seed
 pnpm dev
 pnpm test:workspace
-```
+```text

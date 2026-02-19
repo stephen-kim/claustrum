@@ -32,7 +32,7 @@ assignees: ''
 <!-- Describe a real scenario where you'd use this -->
 
 **Example:**
-```
+```yaml
 You: [Example interaction]
 Claude: [Expected behavior]
 ```

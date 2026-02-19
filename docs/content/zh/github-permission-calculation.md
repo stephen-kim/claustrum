@@ -8,7 +8,7 @@
 
 ```text
 final_permission = max(direct collaborator permission, team-derived permissions)
-```
+```markdown
 
 优先级：
 

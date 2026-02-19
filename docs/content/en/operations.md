@@ -62,7 +62,7 @@ flowchart TD
   L --> M
   F --> N["Execute tool"]
   M --> N
-```
+```markdown
 
 Defaults:
 - `auto_switch_repo=true`
@@ -100,7 +100,7 @@ Defaults:
 
 ## Useful Commands
 
-```bash
+```shell
 pnpm install
 pnpm db:migrate
 pnpm db:seed

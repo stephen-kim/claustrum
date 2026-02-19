@@ -23,9 +23,9 @@ It helps teams keep project context consistent across repositories, tools, and d
 
 macOS / Linux:
 
-```bash
+```shell
 curl -fsSL https://raw.githubusercontent.com/stephen-kim/claustrum/main/scripts/mcp-config-helper.js -o ./claustrum-mcp-config-helper.js && node ./claustrum-mcp-config-helper.js
-```
+```markdown
 
 Windows PowerShell:
 

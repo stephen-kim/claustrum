@@ -13,7 +13,7 @@ Claustrum には初回インストール向けの bootstrap admin フローが�
 ```text
 Bootstrap admin created: admin@example.com
 Initial password (shown once): <random-password>
-```
+```text
 
 ## 初回ログイン後に必須の作業
 

@@ -25,7 +25,7 @@ Detection Rules permite detectar patrones sospechosos con reglas de umbral.
     "via": "security_stream"
   }
 }
-```
+```text
 
 ## Cómo funciona
 

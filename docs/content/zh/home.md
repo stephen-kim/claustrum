@@ -23,9 +23,9 @@ Claustrum 是面向 AI 团队的共享记忆层。
 
 macOS / Linux:
 
-```bash
+```shell
 curl -fsSL https://raw.githubusercontent.com/stephen-kim/claustrum/main/scripts/mcp-config-helper.js -o ./claustrum-mcp-config-helper.js && node ./claustrum-mcp-config-helper.js
-```
+```markdown
 
 Windows PowerShell:
 

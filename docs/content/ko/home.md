@@ -23,9 +23,9 @@ Claustrum은 AI 팀을 위한 공유 메모리 레이어입니다.
 
 macOS / Linux:
 
-```bash
+```shell
 curl -fsSL https://raw.githubusercontent.com/stephen-kim/claustrum/main/scripts/mcp-config-helper.js -o ./claustrum-mcp-config-helper.js && node ./claustrum-mcp-config-helper.js
-```
+```markdown
 
 Windows PowerShell:
 

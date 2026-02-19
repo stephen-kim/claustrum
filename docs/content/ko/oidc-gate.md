@@ -14,7 +14,7 @@ Claustrum은 변경 불가능한 ID 튜플로 OIDC 사용자를 식별합니다.
 
 ```text
 (issuer, subject)
-```
+```text
 이메일은 변경 가능하며 기본 ID 키로 사용되지 않습니다.
 
 ## 그룹 클레임 매핑

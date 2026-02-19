@@ -43,7 +43,7 @@
 
 3. API를 통해 구성 저장(선택 사항)
 
-```bash
+```shell
 curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   -H "Content-Type: application/json" \
@@ -69,13 +69,13 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
       ]
     }
   }'
-```
+```markdown
 4. 트리거 및 확인
 - 감사된 작업을 트리거합니다(예: `reason`을 사용하여 통합 설정 저장).
 - 메시지 전달을 위해 Slack 채널을 확인하세요.
 - API 측 로그를 확인하세요.
 
-```bash
+```shell
 curl -G "$MEMORY_CORE_URL/v1/audit-logs" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   --data-urlencode "workspace_key=personal" \

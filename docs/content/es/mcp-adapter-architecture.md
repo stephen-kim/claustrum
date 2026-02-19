@@ -16,7 +16,7 @@ La lógica de contexto y el almacenamiento viven en el servidor remoto de Claust
     error.log
   state.json
   update.lock
-```
+```text
 
 ## Flujo de solicitud
 

@@ -55,7 +55,7 @@ Use Jira and Confluence as external context sources in MCP workflows:
 
 3. Save config via API (optional)
 
-```bash
+```shell
 curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   -H "Content-Type: application/json" \
@@ -70,9 +70,9 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
       "api_token": "atlassian-token"
     }
   }'
-```
+```markdown
 
-```bash
+```shell
 curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   -H "Content-Type: application/json" \
@@ -91,15 +91,15 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
 
 4. Validate with API
 
-```bash
+```shell
 curl -G "$MEMORY_CORE_URL/v1/jira/search" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   --data-urlencode "workspace_key=personal" \
   --data-urlencode "q=deployment incident" \
   --data-urlencode "limit=5"
-```
+```markdown
 
-```bash
+```shell
 curl -G "$MEMORY_CORE_URL/v1/confluence/search" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   --data-urlencode "workspace_key=personal" \

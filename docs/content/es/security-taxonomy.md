@@ -36,7 +36,7 @@ Puedes sobreescribir por evento:
   "category": "auth",
   "severity": "high"
 }
-```
+```text
 
 ## Controles por workspace
 

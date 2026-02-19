@@ -27,7 +27,7 @@ Claustrum は監査イベントを外部 SIEM に送信できます（Audit Sink
 
 ```text
 HMAC_SHA256(secret, raw_json_body)
-```
+```markdown
 
 ## Retry / Backoff
 

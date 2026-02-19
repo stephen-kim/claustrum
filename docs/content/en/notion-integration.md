@@ -40,7 +40,7 @@ Use Notion as external context for AI workflows:
 
 3. Save config via API (optional)
 
-```bash
+```shell
 curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   -H "Content-Type: application/json" \
@@ -56,11 +56,11 @@ curl -X PUT "$MEMORY_CORE_URL/v1/integrations" \
       "write_on_merge": true
     }
   }'
-```
+```markdown
 
 4. Validate with API
 
-```bash
+```shell
 curl -G "$MEMORY_CORE_URL/v1/notion/search" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   --data-urlencode "workspace_key=personal" \
@@ -68,13 +68,13 @@ curl -G "$MEMORY_CORE_URL/v1/notion/search" \
   --data-urlencode "limit=5"
 ```
 
-```bash
+```shell
 curl -G "$MEMORY_CORE_URL/v1/notion/read" \
   -H "Authorization: Bearer $MEMORY_CORE_API_KEY" \
   --data-urlencode "workspace_key=personal" \
   --data-urlencode "page_id=<notion-page-id-or-url>" \
   --data-urlencode "max_chars=2000"
-```
+```markdown
 
 5. Validate from MCP tools
 - `notion_search({ q, limit? })`

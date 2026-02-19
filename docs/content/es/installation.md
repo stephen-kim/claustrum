@@ -28,15 +28,15 @@ Recomendado:
 
 ## Desarrollo local (source build)
 
-```bash
+```shell
 pnpm install
 cp .env.example .env
 docker compose -f docker-compose.dev.yml --profile localdb up -d --build
-```
+```markdown
 
 ## Desarrollo local (procesos locales + DB en contenedor)
 
-```bash
+```shell
 pnpm install
 cp .env.example .env
 docker compose --profile localdb up -d postgres
@@ -47,21 +47,21 @@ pnpm dev
 
 ## Base de datos externa (RDS, etc.)
 
-```bash
+```shell
 cp .env.example .env
 # Cambia DATABASE_URL a tu endpoint externo
 # Ejemplo: postgres://user:pass@host:5432/db?sslmode=require
 docker compose up -d
-```
+```markdown
 
 ## Asistente MCP
 
-```bash
+```shell
 pnpm mcp:helper
 ```
 
 O en una línea:
 
-```bash
+```shell
 curl -fsSL https://raw.githubusercontent.com/stephen-kim/claustrum/main/scripts/mcp-config-helper.js -o ./claustrum-mcp-config-helper.js && node ./claustrum-mcp-config-helper.js
-```
+```text

@@ -40,7 +40,7 @@ If an npm lockfile appears accidentally, remove it and reinstall with pnpm.
 packages:
   - "apps/*"
   - "packages/*"
-```
+```markdown
 
 
 ## Root Commands
@@ -64,17 +64,17 @@ CI must run:
 
 ## Local Development
 
-```bash
+```shell
 pnpm install
 pnpm dev
 ```
 
 Use package filters when needed:
 
-```bash
+```shell
 pnpm --filter @claustrum/memory-core dev
 pnpm --filter @claustrum/admin-ui build
-```
+```markdown
 
 
 ## Guardrails

@@ -61,11 +61,11 @@ Recommended setup:
 
 ## Local Development (source-build containers)
 
-```bash
+```shell
 pnpm install
 cp .env.example .env
 docker compose -f docker-compose.dev.yml --profile localdb up -d --build
-```
+```markdown
 
 Local endpoints:
 - memory-core: `http://localhost:8080`
@@ -74,7 +74,7 @@ Local endpoints:
 
 ## Local Development (local processes + DB container)
 
-```bash
+```shell
 pnpm install
 cp .env.example .env
 docker compose --profile localdb up -d postgres
@@ -88,21 +88,21 @@ pnpm dev
 
 1. Copy env file:
 
-```bash
+```shell
 cp .env.example .env
-```
+```markdown
 
 2. Set external DB URL:
 
-```bash
+```shell
 DATABASE_URL=postgres://<user>:<pass>@<rds-endpoint>:5432/<db>?sslmode=require
 ```
 
 3. Start services (no localdb profile):
 
-```bash
+```shell
 docker compose up -d
-```
+```markdown
 
 
 ## Docker Notes
@@ -146,7 +146,7 @@ MEMORY_CORE_URL = "http://127.0.0.1:8080"
 MEMORY_CORE_API_KEY = "<runtime-api-key>"
 MEMORY_CORE_WORKSPACE_KEY = "personal"
 MCP_ADAPTER_LOG_LEVEL = "error"
-```
+```markdown
 
 Notes:
 - Build adapter once before using `dist` entry:
@@ -158,7 +158,7 @@ Notes:
 
 Run the interactive wizard:
 
-```bash
+```shell
 pnpm mcp:helper
 ```
 
@@ -171,9 +171,9 @@ Wizard features:
 
 One-line download + run (from anywhere):
 
-```bash
+```shell
 curl -fsSL https://raw.githubusercontent.com/stephen-kim/claustrum/main/scripts/mcp-config-helper.js -o ./claustrum-mcp-config-helper.js && node ./claustrum-mcp-config-helper.js
-```
+```markdown
 
 Windows PowerShell:
 

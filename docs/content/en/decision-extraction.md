@@ -23,7 +23,7 @@ flowchart TD
   I -- "yes" --> J["Create decision memory (draft by default)"]
   I -- "no" --> K["Mark event as processed (not_decision)"]
   G -- "no" --> L["No decision job"]
-```
+```markdown
 
 
 ## Important Rule: Keywords Are Scheduling Only

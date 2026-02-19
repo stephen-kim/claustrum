@@ -26,6 +26,13 @@ export type SidebarSection = {
   items: Array<Pick<DocItem, 'title' | 'href'>>;
 };
 
+export type DocSearchEntry = {
+  title: string;
+  href: string;
+  excerpt: string;
+  searchText: string;
+};
+
 type NavRef = {
   slug: string;
   label?: string;
@@ -487,4 +494,40 @@ export function getSidebarGroups(routeLang: RouteLanguage): SidebarGroup[] {
 
 export function getDefaultHomeHref(routeLang: RouteLanguage): string {
   return routeLang === 'en' ? '/docs/home' : `/docs/${routeLang}/home`;
+}
+
+function toSearchableText(markdown: string): string {
+  const withoutFencedCode = markdown.replace(/```[\s\S]*?```/g, ' ');
+  const withoutInlineCode = withoutFencedCode.replace(/`[^`]*`/g, ' ');
+  const withoutLinks = withoutInlineCode.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+  const withoutImages = withoutLinks.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1');
+  const withoutHeadings = withoutImages.replace(/^#{1,6}\s+/gm, '');
+  const withoutBlockquotes = withoutHeadings.replace(/^\s*>\s?/gm, '');
+  const withoutMarkers = withoutBlockquotes.replace(/[*_~#>-]/g, ' ');
+  return withoutMarkers.replace(/\s+/g, ' ').trim();
+}
+
+function toExcerpt(text: string, maxLen = 180): string {
+  if (text.length <= maxLen) {
+    return text;
+  }
+  return `${text.slice(0, maxLen).trimEnd()}...`;
+}
+
+export function getDocSearchEntries(routeLang: RouteLanguage): DocSearchEntry[] {
+  const docs = getPreferredDocsForRouteLang(getAllDocs(), routeLang);
+
+  return docs.map((doc) => {
+    const href = buildDocHref(doc.slugBase, routeLang);
+    const bodyText = toSearchableText(doc.body);
+    const excerpt = toExcerpt(bodyText, 200);
+    const searchText = `${doc.title} ${bodyText}`.toLowerCase();
+
+    return {
+      title: doc.title,
+      href,
+      excerpt,
+      searchText,
+    };
+  });
 }

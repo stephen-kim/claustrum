@@ -52,7 +52,7 @@ sequenceDiagram
   MemoryCore->>GitHub: Fetch installation details (App JWT)
   MemoryCore->>MemoryCore: Upsert github_installations
   MemoryCore-->>GitHub: 200 JSON (connected)
-```
+```text
 ## API 엔드포인트
 
 - `GET /v1/workspaces/:key/github/install-url`
