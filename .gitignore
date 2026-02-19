@@ -74,3 +74,4 @@ hf_space/
 !/scripts/eval/*.ts
 !/scripts/generate-openapi.mjs
 !/scripts/mcp-config-helper.js
+!/scripts/check-route-zod-boundary.mjs
