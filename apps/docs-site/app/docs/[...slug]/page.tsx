@@ -1,9 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { DocsSidebar } from '../../components/docs-sidebar';
+import { MarkdownDocContent } from '../../components/markdown-doc-content';
 import { buildDocHref, getDocBySegments, getDocParams, getRouteLanguageFromSegments } from '../../../lib/docs';
 
 type Props = {
@@ -59,7 +58,7 @@ export default function DocPage({ params }: Props) {
           </div>
 
           <article className="prose-docs">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{doc.body}</ReactMarkdown>
+            <MarkdownDocContent body={doc.body} />
           </article>
           <p className="subtitle">Last updated: {doc.lastUpdated}</p>
         </div>

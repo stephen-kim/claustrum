@@ -75,36 +75,38 @@ export function DocsSidebarClient({ groups, currentHref }: Props) {
           ) : null}
         </div>
 
-        {filteredGroups.map((group) => (
-          <details key={group.title} open>
-            <summary className="cursor-pointer list-none text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {group.title}
-            </summary>
-            <div className="mt-2 space-y-2">
-              {group.sections.map((section) => (
-                <div key={`${group.title}:${section.title}`}>
-                  <p className="px-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
-                    {section.title}
-                  </p>
-                  <ul className="mt-1 space-y-1">
-                    {section.items.map((item) => (
-                      <li key={`${group.title}:${section.title}:${item.href}`}>
-                        <Link
-                          href={item.href}
-                          className={`block rounded px-2 py-1 no-underline transition-colors ${
-                            currentHref === item.href ? 'bg-primary/20 text-primary' : 'hover:bg-muted/40'
-                          }`}
-                        >
-                          {item.title}
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-          </details>
-        ))}
+        <div className="space-y-6">
+          {filteredGroups.map((group) => (
+            <details key={group.title} open>
+              <summary className="cursor-pointer list-none text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {group.title}
+              </summary>
+              <div className="mt-2 space-y-2">
+                {group.sections.map((section) => (
+                  <div key={`${group.title}:${section.title}`}>
+                    <p className="px-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80">
+                      {section.title}
+                    </p>
+                    <ul className="mt-1 space-y-1">
+                      {section.items.map((item) => (
+                        <li key={`${group.title}:${section.title}:${item.href}`}>
+                          <Link
+                            href={item.href}
+                            className={`block rounded px-2 py-1 no-underline transition-colors ${
+                              currentHref === item.href ? 'bg-primary/20 text-primary' : 'hover:bg-muted/40'
+                            }`}
+                          >
+                            {item.title}
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </details>
+          ))}
+        </div>
       </div>
     </aside>
   );

@@ -1,6 +1,6 @@
 {
   "name": "@claustrum/server",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Claustrum monorepo: shared memory layer for AI systems",
   "type": "module",
   "main": "apps/mcp-adapter/dist/index.js",

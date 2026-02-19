@@ -80,6 +80,117 @@
     content: '';
   }
 
+  .prose-docs :where(pre code.hljs) {
+    @apply block rounded-md border border-border bg-muted/40 p-4 text-[0.9rem] text-foreground;
+  }
+
+  .prose-docs :where(.hljs-comment),
+  .prose-docs :where(.hljs-quote) {
+    color: hsl(var(--muted-foreground));
+  }
+
+  .prose-docs :where(.hljs-keyword),
+  .prose-docs :where(.hljs-selector-tag),
+  .prose-docs :where(.hljs-literal),
+  .prose-docs :where(.hljs-title),
+  .prose-docs :where(.hljs-section),
+  .prose-docs :where(.hljs-doctag),
+  .prose-docs :where(.hljs-strong) {
+    color: hsl(var(--primary));
+  }
+
+  .prose-docs :where(.hljs-string),
+  .prose-docs :where(.hljs-title.class_),
+  .prose-docs :where(.hljs-title.function_),
+  .prose-docs :where(.hljs-attr),
+  .prose-docs :where(.hljs-meta .hljs-string) {
+    color: hsl(162 74% 60%);
+  }
+
+  .prose-docs :where(.hljs-number),
+  .prose-docs :where(.hljs-symbol),
+  .prose-docs :where(.hljs-bullet),
+  .prose-docs :where(.hljs-variable),
+  .prose-docs :where(.hljs-template-tag),
+  .prose-docs :where(.hljs-template-variable),
+  .prose-docs :where(.hljs-type),
+  .prose-docs :where(.hljs-params) {
+    color: hsl(40 89% 66%);
+  }
+
+  .mermaid-block {
+    @apply my-4 overflow-x-auto rounded-md border border-border bg-muted/20 p-4;
+  }
+
+  .mermaid-block svg {
+    @apply h-auto w-full min-w-[280px];
+  }
+
+  .prose-docs :where(.admonition) {
+    @apply my-5 rounded-xl border px-4 py-3;
+    background: hsl(var(--muted) / 0.3);
+    border-color: hsl(var(--border));
+  }
+
+  .prose-docs :where(.admonition)::before {
+    content: 'INFO';
+    @apply mb-2 inline-block rounded-md px-2 py-0.5 text-[0.72rem] font-semibold tracking-wide;
+    color: hsl(var(--primary));
+    background: hsl(var(--primary) / 0.16);
+  }
+
+  .prose-docs :where(.admonition-info),
+  .prose-docs :where(.admonition-note) {
+    border-color: hsl(var(--primary) / 0.6);
+    background: hsl(var(--primary) / 0.08);
+  }
+
+  .prose-docs :where(.admonition-tip) {
+    border-color: hsl(162 74% 60% / 0.6);
+    background: hsl(162 74% 60% / 0.1);
+  }
+
+  .prose-docs :where(.admonition-important) {
+    border-color: hsl(277 73% 68% / 0.6);
+    background: hsl(277 73% 68% / 0.1);
+  }
+
+  .prose-docs :where(.admonition-warning),
+  .prose-docs :where(.admonition-caution) {
+    border-color: hsl(40 89% 66% / 0.6);
+    background: hsl(40 89% 66% / 0.1);
+  }
+
+  .prose-docs :where(.admonition-danger) {
+    border-color: hsl(0 84% 67% / 0.65);
+    background: hsl(0 84% 67% / 0.12);
+  }
+
+  .prose-docs :where(.admonition-tip)::before {
+    content: 'TIP';
+    color: hsl(162 74% 60%);
+    background: hsl(162 74% 60% / 0.18);
+  }
+
+  .prose-docs :where(.admonition-important)::before {
+    content: 'IMPORTANT';
+    color: hsl(277 73% 68%);
+    background: hsl(277 73% 68% / 0.2);
+  }
+
+  .prose-docs :where(.admonition-warning)::before,
+  .prose-docs :where(.admonition-caution)::before {
+    content: 'WARNING';
+    color: hsl(40 89% 66%);
+    background: hsl(40 89% 66% / 0.2);
+  }
+
+  .prose-docs :where(.admonition-danger)::before {
+    content: 'DANGER';
+    color: hsl(0 84% 67%);
+    background: hsl(0 84% 67% / 0.2);
+  }
+
   .docs-select {
     color-scheme: dark;
     border-radius: 0.625rem;
