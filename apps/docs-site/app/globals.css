@@ -81,7 +81,7 @@
   }
 
   .prose-docs :where(pre) {
-    @apply border-0 bg-transparent p-0 shadow-none;
+    @apply my-4 max-w-full overflow-x-auto rounded-md border border-border bg-muted/40 p-0 shadow-none;
   }
 
   .prose-docs :where(pre code) {
@@ -89,7 +89,7 @@
   }
 
   .prose-docs :where(pre code.hljs) {
-    @apply block rounded-md border border-border bg-muted/40 p-4 text-[0.9rem] text-foreground;
+    @apply block w-max min-w-full rounded-none border-0 bg-transparent p-4 text-[0.9rem] text-foreground;
   }
 
   .prose-docs :where(.hljs-comment),
@@ -105,6 +105,15 @@
   .prose-docs :where(.hljs-doctag),
   .prose-docs :where(.hljs-strong) {
     color: hsl(var(--primary));
+  }
+
+  .prose-docs :where(.hljs-built_in),
+  .prose-docs :where(.hljs-name),
+  .prose-docs :where(.hljs-attribute),
+  .prose-docs :where(.hljs-link),
+  .prose-docs :where(.hljs-meta),
+  .prose-docs :where(.hljs-operator) {
+    color: hsl(206 100% 64%);
   }
 
   .prose-docs :where(.hljs-string),
@@ -124,6 +133,27 @@
   .prose-docs :where(.hljs-type),
   .prose-docs :where(.hljs-params) {
     color: hsl(40 89% 66%);
+  }
+
+  .prose-docs :where(code.cli-highlight) .token-shell-command {
+    color: hsl(206 100% 64%);
+  }
+
+  .prose-docs :where(code.cli-highlight) .token-shell-flag {
+    color: hsl(40 89% 66%);
+  }
+
+  .prose-docs :where(code.cli-highlight) .token-shell-url,
+  .prose-docs :where(code.cli-highlight) .token-shell-string {
+    color: hsl(162 74% 60%);
+  }
+
+  .prose-docs :where(code.cli-highlight) .token-shell-op {
+    color: hsl(var(--muted-foreground));
+  }
+
+  .prose-docs :where(code.cli-highlight) .token-shell-arg {
+    color: hsl(var(--foreground));
   }
 
   .mermaid-block {

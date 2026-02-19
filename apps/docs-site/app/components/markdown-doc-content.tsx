@@ -98,6 +98,74 @@ function remarkAdmonitionBlocks() {
   };
 }
 
+function isShellLanguage(language?: string): boolean {
+  return ['shell', 'bash', 'sh', 'zsh', 'powershell', 'pwsh'].includes((language || '').toLowerCase());
+}
+
+function normalizeCodeText(children: React.ReactNode): string | null {
+  if (typeof children === 'string') {
+    return children;
+  }
+  if (Array.isArray(children)) {
+    if (children.every((item) => typeof item === 'string')) {
+      return children.join('');
+    }
+  }
+  return null;
+}
+
+function renderCliHighlighted(text: string): React.ReactNode {
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+
+  return lines.map((line, lineIndex) => {
+    const tokenRegex = /https?:\/\/\S+|&&|\|\||[|;]|--?[A-Za-z0-9._:/\\-]+|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\s+|[^\s]+/g;
+    const tokens = line.match(tokenRegex) || [];
+    let commandMarked = false;
+
+    return (
+      <span key={`line-${lineIndex}`}>
+        {tokens.map((token, tokenIndex) => {
+          let className = '';
+
+          if (/^\s+$/.test(token)) {
+            className = '';
+          } else if (/^https?:\/\/\S+$/i.test(token)) {
+            className = 'token-shell-url';
+          } else if (/^(?:&&|\|\||[|;])$/.test(token)) {
+            className = 'token-shell-op';
+            commandMarked = false;
+          } else if (/^--?[A-Za-z0-9._:/\\-]+$/.test(token)) {
+            if (!commandMarked && !token.startsWith('-')) {
+              className = 'token-shell-command';
+              commandMarked = true;
+            } else if (token.startsWith('-')) {
+              className = 'token-shell-flag';
+            } else {
+              className = 'token-shell-arg';
+            }
+          } else if (/^(?:".*"|'.*')$/.test(token)) {
+            className = 'token-shell-string';
+          } else {
+            if (!commandMarked) {
+              className = 'token-shell-command';
+              commandMarked = true;
+            } else {
+              className = 'token-shell-arg';
+            }
+          }
+
+          return (
+            <span key={`tok-${lineIndex}-${tokenIndex}`} className={className}>
+              {token}
+            </span>
+          );
+        })}
+        {lineIndex < lines.length - 1 ? '\n' : null}
+      </span>
+    );
+  });
+}
+
 const components: Components = {
   code({ className, children, ...props }) {
     const languageMatch = /language-([\w-]+)/.exec(className || '');
@@ -106,6 +174,17 @@ const components: Components = {
     if (language === 'mermaid') {
       const chart = String(children ?? '').replace(/\n$/, '');
       return <MarkdownMermaid chart={chart} />;
+    }
+
+    if (isShellLanguage(language)) {
+      const rawText = normalizeCodeText(children);
+      if (rawText !== null) {
+        return (
+          <code className={`${className || ''} cli-highlight`} {...props}>
+            {renderCliHighlighted(rawText)}
+          </code>
+        );
+      }
     }
 
     return (
@@ -122,10 +201,8 @@ const components: Components = {
 const rehypeHighlightOptions = {
   ignoreMissing: true,
   aliases: {
-    shell: 'bash',
-    sh: 'bash',
-    zsh: 'bash',
-    pwsh: 'powershell',
+    bash: ['shell', 'sh', 'zsh'],
+    powershell: ['pwsh'],
   },
 };
 
