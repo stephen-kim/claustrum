@@ -1,6 +1,7 @@
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeHighlight from 'rehype-highlight';
 import remarkGfm from 'remark-gfm';
+import { MarkdownCodeBlock } from './markdown-code-block';
 import { MarkdownMermaid } from './markdown-mermaid';
 
 type Props = {
@@ -167,6 +168,9 @@ function renderCliHighlighted(text: string): React.ReactNode {
 }
 
 const components: Components = {
+  pre({ children }) {
+    return <MarkdownCodeBlock>{children}</MarkdownCodeBlock>;
+  },
   a({ href, children, ...props }) {
     const normalized = String(href || '');
     const isApiExplorerLink =

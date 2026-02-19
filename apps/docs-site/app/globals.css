@@ -84,6 +84,18 @@
     @apply my-4 max-w-full overflow-x-auto rounded-md border border-border bg-muted/40 p-0 shadow-none;
   }
 
+  .prose-docs :where(.code-block-wrapper) {
+    @apply relative my-4;
+  }
+
+  .prose-docs :where(.code-block-wrapper pre) {
+    @apply my-0;
+  }
+
+  .prose-docs :where(.code-copy-btn) {
+    @apply absolute right-2 top-2 z-10 rounded-md border border-border bg-background/90 px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground;
+  }
+
   .prose-docs :where(pre code) {
     @apply m-0;
   }
